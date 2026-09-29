@@ -1,11 +1,3 @@
-export const NIVELES = {
-  TRIAGE_I_ROJO: { label: "Nivel I · Reanimación", short: "I", color: "#e11d48", bg: "rgba(225,29,72,.12)" },
-  TRIAGE_II_NARANJA: { label: "Nivel II · Emergencia", short: "II", color: "#ea580c", bg: "rgba(234,88,12,.12)" },
-  TRIAGE_III_AMARILLO: { label: "Nivel III · Urgente", short: "III", color: "#ca8a04", bg: "rgba(202,138,4,.14)" },
-  TRIAGE_IV_VERDE: { label: "Nivel IV · Menos urgente", short: "IV", color: "#16a34a", bg: "rgba(22,163,74,.12)" },
-  TRIAGE_V_AZUL: { label: "Nivel V · No urgente", short: "V", color: "#2563eb", bg: "rgba(37,99,235,.12)" },
-};
-
 export function calcularScore(v) {
   let score = 0;
   const spo2 = Number(v.spo2);
@@ -14,64 +6,83 @@ export function calcularScore(v) {
   const pad = Number(v.pad);
   const temp = Number(v.temp);
   const fr = Number(v.fr);
+  const factores = [];
 
-  if (spo2 < 85) score += 40;
-  else if (spo2 < 90) score += 28;
-  else if (spo2 < 94) score += 14;
-  else if (spo2 < 97) score += 4;
+  const add = (pts, nombre, peso) => {
+    if (pts > 0) {
+      score += pts;
+      factores.push({ nombre, peso, pts });
+    }
+  };
 
-  if (fc < 40 || fc > 140) score += 22;
-  else if (fc < 50 || fc > 120) score += 12;
-  else if (fc < 60 || fc > 100) score += 5;
+  if (spo2 < 85) add(40, "Saturación de oxígeno", 0.28);
+  else if (spo2 < 90) add(28, "Saturación de oxígeno", 0.22);
+  else if (spo2 < 94) add(14, "Saturación de oxígeno", 0.16);
 
-  if (pas < 80 || pas > 200) score += 20;
-  else if (pas < 90 || pas > 180) score += 12;
-  else if (pas < 100) score += 6;
+  if (fc < 40 || fc > 140) add(22, "Frecuencia cardíaca", 0.18);
+  else if (fc < 50 || fc > 120) add(12, "Frecuencia cardíaca", 0.12);
 
-  if (pad < 40 || pad > 120) score += 8;
+  if (pas < 80 || pas > 200) add(20, "Presión arterial", 0.18);
+  else if (pas < 90 || pas > 180) add(12, "Presión arterial", 0.12);
 
-  if (temp < 35 || temp >= 39.5) score += 12;
-  else if (temp >= 38.5) score += 6;
+  if (pad < 40 || pad > 120) add(6, "Presión diastólica", 0.06);
 
-  if (fr < 8 || fr > 30) score += 14;
-  else if (fr < 12 || fr > 24) score += 6;
+  if (temp < 35 || temp >= 39.5) add(12, "Temperatura", 0.1);
+  else if (temp >= 38.5) add(6, "Temperatura", 0.06);
 
-  const comorb = (v.antecedentes || "").toLowerCase();
-  if (/infarto|iam|falla cardiaca|insuficiencia/.test(comorb)) score += 8;
-  if (/epoc|asma|oxigeno/.test(comorb)) score += 6;
-  if (/diabetes|hipertens/.test(comorb)) score += 3;
-  if (Number(v.edad) >= 75) score += 5;
-  if (Number(v.edad) < 2) score += 6;
+  if (fr < 8 || fr > 30) add(14, "Frecuencia respiratoria", 0.12);
+  else if (fr < 12 || fr > 24) add(6, "Frecuencia respiratoria", 0.07);
 
-  return Math.min(100, Math.round(score * 10) / 10);
+  if (Number(v.edad) >= 65) add(8, "Edad", 0.12);
+  if (Number(v.edad) < 2) add(6, "Edad pediátrica", 0.08);
+
+  const comorb = `${v.antecedentes || ""} ${v.motivo || ""}`.toLowerCase();
+  if (/infarto|falla cardiaca|epoc|asma/.test(comorb)) add(8, "Antecedentes", 0.08);
+  if ((v.sintomas || []).includes("Dolor")) add(4, "Síntomas", 0.05);
+  if ((v.sintomas || []).includes("Dificultad respiratoria")) add(8, "Dificultad respiratoria", 0.1);
+
+  const total = Math.min(100, Math.round(score * 10) / 10);
+  const sumaPeso = factores.reduce((a, f) => a + f.peso, 0) || 1;
+  return {
+    score: total,
+    factores: factores.map((f) => ({ ...f, peso: Number((f.peso / sumaPeso).toFixed(2)) })),
+  };
 }
 
-export function nivelDesdeScore(score) {
-  if (score >= 70) return "TRIAGE_I_ROJO";
-  if (score >= 50) return "TRIAGE_II_NARANJA";
-  if (score >= 30) return "TRIAGE_III_AMARILLO";
-  if (score >= 15) return "TRIAGE_IV_VERDE";
-  return "TRIAGE_V_AZUL";
+export function prioridadDe(score) {
+  if (score >= 50) return "Alta";
+  if (score >= 30) return "Media";
+  return "Baja";
+}
+
+export function compararPrioridad(a, b) {
+  if (b.score !== a.score) return b.score - a.score;
+  return a.llegada - b.llegada;
 }
 
 const seed = [
-  { nombre: "María López", doc: "10293847", edad: 72, sexo: "F", antecedentes: "HTA, diabetes", spo2: 88, fc: 118, pas: 86, pad: 52, temp: 38.9, fr: 28 },
-  { nombre: "Andrés Peña", doc: "44551233", edad: 34, sexo: "M", antecedentes: "Asma", spo2: 96, fc: 88, pas: 122, pad: 78, temp: 37.1, fr: 18 },
-  { nombre: "Lucía Torres", doc: "99887711", edad: 8, sexo: "F", antecedentes: "Ninguno", spo2: 99, fc: 102, pas: 108, pad: 68, temp: 37.4, fr: 22 },
-  { nombre: "Carlos Ruiz", doc: "22334455", edad: 61, sexo: "M", antecedentes: "EPOC", spo2: 91, fc: 104, pas: 148, pad: 92, temp: 38.2, fr: 26 },
+  { codigo: "P-001", nombre: "Juan Pérez García", doc: "1020-12345678-9", edad: 67, sexo: "M", antecedentes: "HTA, diabetes", motivo: "Dolor torácico", spo2: 86, fc: 118, pas: 86, pad: 52, temp: 38.9, fr: 28, sintomas: ["Dolor", "Dificultad respiratoria"] },
+  { codigo: "P-002", nombre: "Carlos Rodríguez", doc: "0810-98765432-1", edad: 34, sexo: "M", antecedentes: "Asma", motivo: "Disnea", spo2: 91, fc: 104, pas: 148, pad: 92, temp: 38.2, fr: 26, sintomas: ["Dificultad respiratoria"] },
+  { codigo: "P-003", nombre: "Ana Martínez", doc: "0614-55667788-2", edad: 21, sexo: "F", antecedentes: "Ninguno", motivo: "Fiebre", spo2: 97, fc: 92, pas: 118, pad: 74, temp: 38.4, fr: 20, sintomas: ["Fiebre"] },
+  { codigo: "P-004", nombre: "Luis Fernández", doc: "0011-33445566-0", edad: 58, sexo: "M", antecedentes: "EPOC", motivo: "Tos y fatiga", spo2: 93, fc: 96, pas: 142, pad: 88, temp: 37.6, fr: 22, sintomas: ["Tos", "Mareo"] },
+  { codigo: "P-005", nombre: "María López", doc: "2233-11223344-5", edad: 45, sexo: "F", antecedentes: "Ninguno", motivo: "Cefalea", spo2: 99, fc: 78, pas: 122, pad: 78, temp: 36.8, fr: 16, sintomas: ["Dolor"] },
 ];
 
+let seq = 6;
+
 export function crearPaciente(data) {
-  const score = calcularScore(data);
-  const nivel = nivelDesdeScore(score);
+  const { score, factores } = calcularScore(data);
   return {
     id: crypto.randomUUID(),
+    codigo: data.codigo || `P-${String(seq++).padStart(3, "0")}`,
     ...data,
     score,
-    nivel,
-    estado: "EN_ESPERA",
-    llegada: Date.now(),
+    factores,
+    prioridad: prioridadDe(score),
+    estado: data.estado || "En espera",
+    llegada: data.llegada || Date.now(),
     actualizado: Date.now(),
+    medico: "Dr. Carlos Pérez",
   };
 }
 
@@ -79,7 +90,6 @@ export function pacientesIniciales() {
   return seed.map(crearPaciente).sort(compararPrioridad);
 }
 
-export function compararPrioridad(a, b) {
-  if (b.score !== a.score) return b.score - a.score;
-  return a.llegada - b.llegada;
+export function minutosEspera(p) {
+  return Math.max(1, Math.floor((Date.now() - p.llegada) / 60000) || p.esperaMin || 8);
 }
