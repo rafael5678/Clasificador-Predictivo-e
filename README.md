@@ -1,12 +1,16 @@
-# Triage Predictivo (avance frontend)
+# TriageIA — Clasificador predictivo en urgencias
 
-Interfaz de sala de urgencias con cola reordenada por score de criticidad (no FIFO).
+Sistema de **reordenamiento dinámico** de la sala de espera. No atiende por llegada (FIFO): estima un **score de criticidad 0–100** con un modelo tabular tipo boosting (NEWS2 + lesión/enfermedad + comorbilidades) y mueve al paciente si sus signos se degradan.
 
-## Ver en local
+## Acceso de demostración
+- Usuario: `medico`
+- Contraseña: `triage123`
+
+## Local
 ```bash
 npm install
 npm run dev
 ```
 
 ## Vercel
-Importa este repositorio. Comando de build: `npm run build`. Carpeta de salida: `dist`.
+Build: `npm run build` · salida: `dist`
