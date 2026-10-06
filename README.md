@@ -1,19 +1,21 @@
 # TriageIA — Frontend
 
-Interfaz de sala de urgencias (React + Vite). La cola se reordena por criticidad, no por llegada.
+React + Vite. En producción habla con el backend de Render.
 
-Repos del proyecto:
-- Frontend: https://github.com/rafael5678/Triage_frotend-
-- Backend: https://github.com/rafael5678/Triage_backend
-- Base de datos: https://github.com/rafael5678/Triage_base-de-datos
+## Vercel
+1. Importa este repo.
+2. Build: `npm run build` · Output: `dist`
+3. Variable de entorno:
+   - `VITE_API_URL` = `https://TU-SERVICIO.onrender.com`  (sin barra final)
 
-## Demo
-- Usuario: `medico`
-- Contraseña: `triage123`
-
+## Local
 ```bash
 npm install
 npm run dev
 ```
+`.env`: `VITE_API_URL=http://localhost:8080`
 
-Vercel: build `npm run build`, carpeta `dist`.
+Demo: `medico` / `triage123`
+
+Backend: https://github.com/rafael5678/Triage_backend  
+DB: https://github.com/rafael5678/Triage_base-de-datos

@@ -1,6 +1,7 @@
 import { compararPrioridad, crearPaciente, minutosEspera, pacientesIniciales } from "./triage";
 import { COMORBILIDADES, LESIONES } from "./ml/dataset";
 import { explicar, obtenerModelo, predecirScore, similares } from "./ml/modelo";
+import { atenderApi, cargarPacientes, registrarEvaluar, reevaluarApi } from "./api";
 import { useMemo, useState } from "react";
 
 const NAV = [
@@ -77,6 +78,11 @@ export default function App() {
     if (login.usuario.trim() === "medico" && login.clave === "triage123") {
       setUser({ nombre: "Dr. Carlos Pérez", rol: "Médico de urgencias" });
       setErr("");
+      cargarPacientes()
+        .then((list) => {
+          if (list?.length) setPacientes(list);
+        })
+        .catch(() => flash("API no disponible: cola local. En Vercel define VITE_API_URL de Render."));
       return;
     }
     setErr("Credenciales de demostración: medico / triage123");
@@ -108,15 +114,28 @@ export default function App() {
     setView("resultado");
   }
 
-  function confirmar() {
-    setPacientes((list) => [resultado, ...list].sort(compararPrioridad));
-    setForm(vacio);
-    flash(`${resultado.nombre} entra a cola · score ${resultado.score} · ${resultado.prioridad.esi}`);
+  async function confirmar() {
+    try {
+      const saved = await registrarEvaluar(resultado);
+      saved.factores = resultado.factores;
+      saved.vecinos = resultado.vecinos;
+      setPacientes((list) => [saved, ...list.filter((x) => x.id !== saved.id)].sort(compararPrioridad));
+      setForm(vacio);
+      flash(`${saved.nombre} guardado en PostgreSQL · score ${saved.score} · ${saved.prioridad.esi}`);
+    } catch (e) {
+      setPacientes((list) => [resultado, ...list].sort(compararPrioridad));
+      flash(`Sin API (${e.message}). Quedó en cola local.`);
+    }
     setView("inicio");
     setResultado(null);
   }
 
-  function atender(id) {
+  async function atender(id) {
+    try {
+      await atenderApi(id);
+    } catch {
+      /* cola local */
+    }
     setPacientes((list) => list.map((p) => (p.id === id ? { ...p, estado: "En atención" } : p)));
     flash("Paciente pasa a sala de atención y sale de la cola.");
     setSel(null);
@@ -127,11 +146,11 @@ export default function App() {
     setView("reevaluar");
   }
 
-  function aplicarRe(e) {
+  async function aplicarRe(e) {
     e.preventDefault();
     const antes = pacientes.find((x) => x.id === re.id);
     const posAntes = espera.findIndex((x) => x.id === re.id);
-    const next = crearPaciente(payload(re), pack.modelo);
+    let next = crearPaciente(payload(re), pack.modelo);
     next.id = re.id;
     next.codigo = re.codigo;
     next.nombre = re.nombre;
@@ -139,6 +158,12 @@ export default function App() {
     next.llegada = re.llegada;
     next.estado = "En espera";
     next.factores = explicar(pack.modelo, next);
+    try {
+      next = { ...next, ...(await reevaluarApi(re.id, payload(re))) };
+      next.factores = explicar(pack.modelo, next);
+    } catch {
+      /* local */
+    }
     const mezcla = pacientes.map((p) => (p.id === next.id ? next : p));
     const cola = mezcla.filter((p) => p.estado === "En espera").sort(compararPrioridad);
     const posAhora = cola.findIndex((x) => x.id === next.id);
