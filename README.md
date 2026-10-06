@@ -1,21 +1,13 @@
-# TriageIA — Frontend
+# Clasificador Predictivo en Salas de Urgencias (Frontend)
 
-React + Vite. En producción habla con el backend de Render.
+Módulo de cliente web interactivo desarrollado en **React** y **Vite** para la clasificación y priorización de pacientes en salas de urgencias mediante el protocolo Manchester.
 
-## Vercel
-1. Importa este repo.
-2. Build: `npm run build` · Output: `dist`
-3. Variable de entorno:
-   - `VITE_API_URL` = `https://TU-SERVICIO.onrender.com`  (sin barra final)
+## Características Principales
+- 📋 **Formulario de Admisión Rápida**: Registro de datos demográficos y signos vitales.
+- ⚡ **Algoritmo de Priorización Dinámica**: Cálculo de criticidad y tiempo estimado de atención.
+- 📊 **Monitor de Cola en Tiempo Real**: Visualización interactiva con ordenamiento de severidad.
+- 🩺 **Simulador Clínico**: Herramienta para probar casos de estudio predefinidos.
+- 🌐 **Despliegue Continuo**: Integrado con Vercel.
 
-## Local
-```bash
-npm install
-npm run dev
-```
-`.env`: `VITE_API_URL=http://localhost:8080`
-
-Demo: `medico` / `triage123`
-
-Backend: https://github.com/rafael5678/Triage_backend  
-DB: https://github.com/rafael5678/Triage_base-de-datos
+## Documentación
+Consulte los detalles en la carpeta [`docs/`](docs/).
