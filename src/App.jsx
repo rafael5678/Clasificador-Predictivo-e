@@ -262,7 +262,6 @@ export default function App() {
             <label>Contraseña<input type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
             {loginError && <p className="form-err">{loginError}</p>}
             <button className="btn" type="submit" disabled={loginBusy}>{loginBusy ? "Comprobando…" : "Entrar"}</button>
-            <p className="hint">El sistema abre urgencias o administración según la cuenta que exista en la base de datos.</p>
           </form>
         </section>
         <aside className="auth-visual">
