@@ -206,7 +206,14 @@ td { padding: 12px 8px; border-bottom: 1px solid #efe8dc; vertical-align: top; }
 .why-list { margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.55; font-size: 14px; }
 .empty { padding: 24px; color: var(--muted); list-style: none; }
 .full-select { width: 100%; }
-.banner p { margin: 6px 0 0; font-size: 14px; }
+.glass-wide { max-width: 420px; }
+.glass-lead { font-size: 13px; line-height: 1.45; opacity: .9; margin: 8px 0 12px; }
+.wait-bands { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.wait-row { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; font-size: 13px; }
+.wait-row em { font-style: normal; opacity: .7; font-size: 11px; }
+.wait-bar { height: 6px; background: rgba(255,255,255,.15); border-radius: 99px; overflow: hidden; margin: 4px 0; }
+.wait-bar i { display: block; height: 100%; background: #e8c37a; }
+.glass-now, .glass-status { display: block; margin-top: 10px; font-size: 12px; line-height: 1.4; opacity: .85; }
 @media (max-width: 980px) {
   .auth, .app, .split, .g2, .g3, .stats, .q { display: flex; flex-direction: column; }
   .auth-visual { min-height: 260px; }

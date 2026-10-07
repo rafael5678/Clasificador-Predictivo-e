@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { COMORBIDITIES, CONDITIONS } from "./ml/conditions";
 import { featureContributions, getModel, predictScore } from "./ml/model";
-import { comparePriority, createPatient, waitingMinutes } from "./patient";
+import { comparePriority, createPatient } from "./patient";
 import { explainWhy } from "./explain";
 import { fetchPatients, registerAndScore, reevaluatePatient, startCare } from "./api";
+import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "./waitTimes";
 
 const NAV = [
   ["queue", "Sala de espera"],
@@ -226,30 +227,39 @@ export default function App() {
           </form>
         </section>
         <aside className="auth-visual">
-          <div className="glass">
-            {liveQueue.loading && <small>Leyendo la cola real…</small>}
-            {liveQueue.offline && (
-              <>
-                <span>Puntaje de riesgo</span>
-                <em>—</em>
-                <small>No hay conexión con el servidor ahora. El número no se inventa.</small>
-              </>
-            )}
-            {!liveQueue.loading && !liveQueue.offline && !topWaiting && (
-              <>
-                <span>Puntaje de riesgo</span>
-                <em>—</em>
-                <small>Todavía no hay nadie en espera. El puntaje aparecerá con el primer ingreso real.</small>
-              </>
-            )}
+          <div className="glass glass-wide">
+            <span>Cuánto se espera, según qué tan grave esté</span>
+            <p className="glass-lead">
+              El puntaje 100 es lo más grave (casi no espera). El 0 es lo más leve (puede esperar más).
+              La barra es el <b>porcentaje de espera</b> respecto a 2 horas: si estás muy herido, el porcentaje es bajo.
+            </p>
+            <ul className="wait-bands">
+              {CARE_TARGETS.map((t) => {
+                const count = liveQueue.patients.filter((p) => p.score >= t.minScore && p.score <= t.maxScore).length;
+                const share = Math.round((t.wait / 120) * 100);
+                return (
+                  <li key={t.id}>
+                    <div className="wait-row">
+                      <b>{t.label}</b>
+                      <em>puntaje {t.minScore}–{t.maxScore}</em>
+                      <span>~{t.wait} min</span>
+                    </div>
+                    <div className="wait-bar"><i style={{ width: `${share}%` }} /></div>
+                    <small>{t.detail}{!liveQueue.loading && !liveQueue.offline ? ` · Ahora en sala: ${count}` : ""}</small>
+                  </li>
+                );
+              })}
+            </ul>
             {topWaiting && (
-              <>
-                <span>Caso más grave ahora en espera</span>
-                <em>{topWaiting.score.toFixed(1)}</em>
-                <small>
-                  {topWaiting.priority.chip}: {topWaiting.priority.meaning}
-                </small>
-              </>
+              <p className="glass-now">
+                Más grave ahora: puntaje {topWaiting.score.toFixed(1)} · espera meta ~{estimateWaitMinutes(topWaiting.score, liveQueue.patients)} min
+                ({waitSharePercent(topWaiting.score)}% de una espera larga).
+              </p>
+            )}
+            {liveQueue.loading && <small className="glass-status">Consultando la sala… si Render está dormido puede tardar unos segundos.</small>}
+            {liveQueue.offline && <small className="glass-status">Servidor aún no responde. Puedes entrar igual; la tabla de espera es del protocolo de triage.</small>}
+            {!liveQueue.loading && !liveQueue.offline && !topWaiting && (
+              <small className="glass-status">Sala vacía en la base. Los tiempos de arriba son la meta según gravedad.</small>
             )}
           </div>
         </aside>
@@ -315,9 +325,9 @@ export default function App() {
                     <Chip priority={p.priority} />
                     <div className="sc">
                       <b>{Number(p.score).toFixed(1)}</b>
-                      <small>NEWS2 {p.news2 ?? "—"}</small>
+                      <small>~{estimateWaitMinutes(p.score, waiting)} min</small>
                     </div>
-                    <span className="wait">{waitingMinutes(p)} min</span>
+                    <span className="wait">{waitSharePercent(p.score)}%</span>
                   </li>
                 ))}
               </ol>
@@ -329,6 +339,7 @@ export default function App() {
                     <h2>{selected.name}</h2>
                     <p className="muted">{selectedExplain.meaning}</p>
                     <p className="scoreline">Puntaje <b>{Number(selected.score).toFixed(1)}</b> / 100</p>
+                    <p className="muted">{waitSummary(selected.score, waiting).text} Porcentaje de espera: {waitSharePercent(selected.score)}% (100% = ~2 horas en un caso leve).</p>
                     <ul className="why-list">
                       {selectedExplain.reasons.slice(0, 4).map((r) => <li key={r}>{r}</li>)}
                     </ul>
@@ -435,6 +446,7 @@ export default function App() {
                 <h2>{result.score.toFixed(1)} / 100</h2>
                 <p>{result.explanation.meaning}</p>
                 <p>{result.explanation.whyQueue}</p>
+                <p>{waitSummary(result.score, waiting).text} Porcentaje de espera: {waitSharePercent(result.score)}% (un caso leve ≈ 100%, un caso crítico ≈ 2%).</p>
               </div>
               <Chip priority={result.priority} />
             </div>

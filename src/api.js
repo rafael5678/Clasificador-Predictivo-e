@@ -2,16 +2,26 @@ import { priorityFromScore } from "./ml/model";
 
 export const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:8080" : "");
 
-async function request(path, options = {}) {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || "Error de API");
+async function request(path, options = {}, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options,
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || "Error de API");
+    }
+    return res.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("El servidor tardó en responder (Render se está despertando).");
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 const STATUS = {
@@ -61,7 +71,7 @@ export function mapFromApi(row) {
 }
 
 export async function fetchPatients() {
-  const list = await request("/api/v1/triage/pacientes");
+  const list = await request("/api/v1/triage/pacientes", {}, 8000);
   return list.map(mapFromApi);
 }
 
@@ -77,7 +87,7 @@ export async function registerAndScore(form) {
       motivo: form.reason || form.motivo,
       antecedentes: (form.comorbidityIds || form.comorbIds || []).join(", "),
     }),
-  });
+  }, 25000);
   const scored = await request("/api/v1/triage/evaluaciones", {
     method: "POST",
     body: JSON.stringify({
