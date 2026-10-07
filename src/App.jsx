@@ -1,32 +1,33 @@
-import { compararPrioridad, crearPaciente, minutosEspera, pacientesIniciales } from "./triage";
-import { COMORBILIDADES, LESIONES } from "./ml/dataset";
-import { explicar, obtenerModelo, predecirScore, similares } from "./ml/modelo";
-import { atenderApi, cargarPacientes, registrarEvaluar, reevaluarApi } from "./api";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { COMORBIDITIES, CONDITIONS } from "./ml/conditions";
+import { featureContributions, getModel, predictScore } from "./ml/model";
+import { comparePriority, createPatient, waitingMinutes } from "./patient";
+import { explainWhy } from "./explain";
+import { fetchPatients, registerAndScore, reevaluatePatient, startCare } from "./api";
 
 const NAV = [
-  ["inicio", "Sala de espera"],
-  ["registrar", "Nuevo ingreso"],
-  ["pacientes", "Pacientes"],
-  ["historial", "Historial"],
-  ["modelo", "Modelo y dataset"],
-  ["config", "IA responsable"],
+  ["queue", "Sala de espera"],
+  ["intake", "Nuevo ingreso"],
+  ["patients", "Pacientes"],
+  ["history", "Historial"],
+  ["model", "Cómo calcula"],
+  ["ethics", "Uso responsable"],
 ];
 
-const vacio = {
-  nombre: "",
-  doc: "",
-  edad: "",
-  sexo: "M",
-  lesionId: "abdomen",
-  motivo: "",
-  pas: "",
-  pad: "",
-  fc: "",
+const EMPTY_FORM = {
+  name: "",
+  document: "",
+  age: "",
+  sex: "M",
+  conditionId: "",
+  reason: "",
+  systolic: "",
+  diastolic: "",
+  heartRate: "",
   spo2: "",
-  temp: "",
-  fr: "",
-  comorbIds: [],
+  temperature: "",
+  respiratoryRate: "",
+  comorbidityIds: [],
 };
 
 function Logo() {
@@ -39,171 +40,217 @@ function Logo() {
       </span>
       <div>
         <strong>TriageIA</strong>
-        <small>Criticidad en tiempo real</small>
+        <small>Cola por gravedad real</small>
       </div>
     </div>
   );
 }
 
-function Chip({ p }) {
-  return <span className={`chip ${p.tono}`}>{p.chip}</span>;
+function Chip({ priority }) {
+  return <span className={`chip ${priority.tone}`}>{priority.chip}</span>;
+}
+
+function Field({ label, help, children, className }) {
+  return (
+    <label className={className}>
+      {label}
+      {children}
+      {help && <small className="field-help">{help}</small>}
+    </label>
+  );
 }
 
 export default function App() {
-  const pack = useMemo(() => obtenerModelo(), []);
+  const pack = useMemo(() => getModel(), []);
   const [user, setUser] = useState(null);
-  const [login, setLogin] = useState({ usuario: "", clave: "" });
-  const [err, setErr] = useState("");
-  const [view, setView] = useState("inicio");
-  const [form, setForm] = useState(vacio);
-  const [pacientes, setPacientes] = useState(() => pacientesIniciales(pack.modelo));
-  const [resultado, setResultado] = useState(null);
-  const [sel, setSel] = useState(null);
+  const [login, setLogin] = useState({ username: "", password: "" });
+  const [loginError, setLoginError] = useState("");
+  const [view, setView] = useState("queue");
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [patients, setPatients] = useState([]);
+  const [result, setResult] = useState(null);
+  const [selected, setSelected] = useState(null);
   const [toast, setToast] = useState("");
-  const [q, setQ] = useState("");
-  const [re, setRe] = useState(null);
+  const [query, setQuery] = useState("");
+  const [recheck, setRecheck] = useState(null);
+  const [liveQueue, setLiveQueue] = useState({ loading: true, patients: [] });
 
-  const espera = useMemo(
-    () => pacientes.filter((p) => p.estado === "En espera").sort(compararPrioridad),
-    [pacientes]
+  const waiting = useMemo(
+    () => patients.filter((p) => p.status === "En espera").sort(comparePriority),
+    [patients]
   );
 
-  function flash(m) {
-    setToast(m);
-    setTimeout(() => setToast(""), 3200);
+  useEffect(() => {
+    fetchPatients()
+      .then((list) => setLiveQueue({ loading: false, patients: list.filter((p) => p.status === "En espera").sort(comparePriority) }))
+      .catch(() => setLiveQueue({ loading: false, patients: [], offline: true }));
+  }, []);
+
+  function flash(message) {
+    setToast(message);
+    setTimeout(() => setToast(""), 3500);
   }
 
-  function onLogin(e) {
-    e.preventDefault();
-    if (login.usuario.trim() === "medico" && login.clave === "triage123") {
-      setUser({ nombre: "Dr. Carlos Pérez", rol: "Médico de urgencias" });
-      setErr("");
-      cargarPacientes()
-        .then((list) => {
-          if (list?.length) setPacientes(list);
-        })
-        .catch(() => flash("API no disponible: cola local. En Vercel define VITE_API_URL de Render."));
-      return;
-    }
-    setErr("Credenciales de demostración: medico / triage123");
+  function setField(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function setF(k, v) {
-    setForm((f) => ({ ...f, [k]: v }));
-  }
-
-  function payload(base) {
+  function toPayload(source) {
     return {
-      ...base,
-      edad: Number(base.edad),
-      spo2: Number(base.spo2),
-      fc: Number(base.fc),
-      pas: Number(base.pas),
-      pad: Number(base.pad),
-      temp: Number(base.temp),
-      fr: Number(base.fr),
+      ...source,
+      age: Number(source.age),
+      spo2: Number(source.spo2),
+      heartRate: Number(source.heartRate),
+      systolic: Number(source.systolic),
+      diastolic: Number(source.diastolic),
+      temperature: Number(source.temperature),
+      respiratoryRate: Number(source.respiratoryRate),
+      fc: Number(source.heartRate),
+      pas: Number(source.systolic),
+      pad: Number(source.diastolic),
+      temp: Number(source.temperature),
+      fr: Number(source.respiratoryRate),
+      edad: Number(source.age),
+      lesionId: source.conditionId,
+      comorbIds: source.comorbidityIds,
     };
   }
 
-  function analizar(e) {
-    e.preventDefault();
-    const p = crearPaciente(payload(form), pack.modelo);
-    p.factores = explicar(pack.modelo, p);
-    p.vecinos = similares(pack.data, p);
-    setResultado(p);
-    setView("resultado");
-  }
-
-  async function confirmar() {
-    try {
-      const saved = await registrarEvaluar(resultado);
-      saved.factores = resultado.factores;
-      saved.vecinos = resultado.vecinos;
-      setPacientes((list) => [saved, ...list.filter((x) => x.id !== saved.id)].sort(compararPrioridad));
-      setForm(vacio);
-      flash(`${saved.nombre} guardado en PostgreSQL · score ${saved.score} · ${saved.prioridad.esi}`);
-    } catch (e) {
-      setPacientes((list) => [resultado, ...list].sort(compararPrioridad));
-      flash(`Sin API (${e.message}). Quedó en cola local.`);
+  function onLogin(event) {
+    event.preventDefault();
+    if (login.username.trim() === "medico" && login.password === "triage123") {
+      setUser({ displayName: "Personal de urgencias", role: "Acceso de trabajo" });
+      setLoginError("");
+      fetchPatients()
+        .then((list) => setPatients(list))
+        .catch(() => {
+          setPatients([]);
+          flash("No se pudo leer la base. Revisa que Render esté activo.");
+        });
+      return;
     }
-    setView("inicio");
-    setResultado(null);
+    setLoginError("Usuario o contraseña incorrectos.");
   }
 
-  async function atender(id) {
+  function analyze(event) {
+    event.preventDefault();
+    if (!form.conditionId) return;
+    const patient = createPatient(toPayload(form), pack.model);
+    patient.contributions = featureContributions(pack.model, patient);
+    patient.explanation = explainWhy(patient);
+    setResult(patient);
+    setView("result");
+  }
+
+  async function confirmEntry() {
     try {
-      await atenderApi(id);
-    } catch {
-      /* cola local */
+      const saved = await registerAndScore(result);
+      saved.contributions = result.contributions;
+      saved.explanation = explainWhy(saved);
+      setPatients((list) => [saved, ...list.filter((p) => p.id !== saved.id)].sort(comparePriority));
+      setForm(EMPTY_FORM);
+      flash(`${saved.name} quedó en la cola con puntaje ${saved.score}.`);
+    } catch (error) {
+      flash(`No se guardó en la base: ${error.message}`);
+      return;
     }
-    setPacientes((list) => list.map((p) => (p.id === id ? { ...p, estado: "En atención" } : p)));
-    flash("Paciente pasa a sala de atención y sale de la cola.");
-    setSel(null);
+    setView("queue");
+    setResult(null);
   }
 
-  function abrirRe(p) {
-    setRe({ ...p });
-    setView("reevaluar");
-  }
-
-  async function aplicarRe(e) {
-    e.preventDefault();
-    const antes = pacientes.find((x) => x.id === re.id);
-    const posAntes = espera.findIndex((x) => x.id === re.id);
-    let next = crearPaciente(payload(re), pack.modelo);
-    next.id = re.id;
-    next.codigo = re.codigo;
-    next.nombre = re.nombre;
-    next.doc = re.doc;
-    next.llegada = re.llegada;
-    next.estado = "En espera";
-    next.factores = explicar(pack.modelo, next);
+  async function moveToCare(id) {
     try {
-      next = { ...next, ...(await reevaluarApi(re.id, payload(re))) };
-      next.factores = explicar(pack.modelo, next);
-    } catch {
-      /* local */
+      await startCare(id);
+    } catch (error) {
+      flash(error.message);
+      return;
     }
-    const mezcla = pacientes.map((p) => (p.id === next.id ? next : p));
-    const cola = mezcla.filter((p) => p.estado === "En espera").sort(compararPrioridad);
-    const posAhora = cola.findIndex((x) => x.id === next.id);
-    setPacientes(mezcla);
-    setRe(null);
-    setSel(next);
-    const delta = posAntes - posAhora;
-    const mov = delta > 0 ? `subió ${delta} puesto(s)` : delta < 0 ? `bajó ${-delta} puesto(s)` : "mantiene posición";
-    flash(`Reevaluación: ${next.nombre} · ${antes.score} → ${next.score} · ${mov}`);
-    setView("inicio");
+    setPatients((list) => list.map((p) => (p.id === id ? { ...p, status: "En atención", estado: "En atención" } : p)));
+    flash("Salió de la cola: pasa a atención.");
+    setSelected(null);
   }
 
-  const filtrados = pacientes.filter((p) => {
-    const t = q.toLowerCase();
-    return !t || p.nombre.toLowerCase().includes(t) || p.doc.includes(t) || p.codigo.toLowerCase().includes(t);
+  async function applyRecheck(event) {
+    event.preventDefault();
+    const before = patients.find((p) => p.id === recheck.id);
+    const positionBefore = waiting.findIndex((p) => p.id === recheck.id);
+    let next = createPatient(toPayload(recheck), pack.model);
+    next.id = recheck.id;
+    next.name = recheck.name;
+    next.document = recheck.document;
+    next.arrivedAt = recheck.arrivedAt;
+    next.explanation = explainWhy(next);
+    try {
+      next = { ...next, ...(await reevaluatePatient(recheck.id, toPayload(recheck))) };
+      next.explanation = explainWhy(next);
+    } catch (error) {
+      flash(error.message);
+      return;
+    }
+    const merged = patients.map((p) => (p.id === next.id ? next : p));
+    const queue = merged.filter((p) => p.status === "En espera").sort(comparePriority);
+    const positionAfter = queue.findIndex((p) => p.id === next.id);
+    setPatients(merged);
+    setRecheck(null);
+    setSelected(next);
+    const delta = positionBefore - positionAfter;
+    const moved = delta > 0 ? `subió ${delta} puesto(s)` : delta < 0 ? `bajó ${Math.abs(delta)} puesto(s)` : "se quedó en el mismo puesto";
+    flash(`Nuevo puntaje ${before.score} → ${next.score}: ${moved}.`);
+    setView("queue");
+  }
+
+  const filtered = patients.filter((p) => {
+    const q = query.toLowerCase();
+    return !q || (p.name || "").toLowerCase().includes(q) || String(p.document || "").includes(q);
   });
+
+  const topWaiting = liveQueue.patients[0];
+  const selectedExplain = selected ? explainWhy(selected) : null;
 
   if (!user) {
     return (
       <div className="auth">
         <section className="auth-copy">
           <Logo />
-          <p className="eyebrow">Aprendizaje automático tabular · NEWS2 + boosting</p>
-          <h1>La cola no espera al más puntual. Espera al más grave.</h1>
+          <p className="eyebrow">Urgencias · cola por riesgo, no por orden de llegada</p>
+          <h1>Entra quien está más grave, no quien llegó primero.</h1>
           <p className="lede">
-            TriageIA estima criticidad continua (0–100) con signos vitales, lesión o enfermedad y antecedentes, y reordena la sala de espera en milisegundos.
+            El puntaje va de 0 a 100. Se calcula con oxígeno, pulso, presión, temperatura, respiración, edad, qué le duele y enfermedades que ya tenía.
           </p>
           <form className="auth-form" onSubmit={onLogin}>
-            <label>Usuario<input autoComplete="username" value={login.usuario} onChange={(e) => setLogin({ ...login, usuario: e.target.value })} /></label>
-            <label>Contraseña<input type="password" autoComplete="current-password" value={login.clave} onChange={(e) => setLogin({ ...login, clave: e.target.value })} /></label>
-            {err && <p className="form-err">{err}</p>}
+            <label>Usuario<input autoComplete="username" value={login.username} onChange={(e) => setLogin({ ...login, username: e.target.value })} /></label>
+            <label>Contraseña<input type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
+            {loginError && <p className="form-err">{loginError}</p>}
             <button className="btn" type="submit">Entrar a urgencias</button>
-            <p className="hint">Demo · usuario <b>medico</b> · contraseña <b>triage123</b></p>
+            <p className="hint">Acceso de trabajo: usuario <b>medico</b> · contraseña <b>triage123</b></p>
           </form>
         </section>
         <aside className="auth-visual">
           <div className="glass">
-            <span>Score de riesgo</span>
-            <em>91.4</em>
-            <small>ESI I · Reanimación · no FIFO</small>
+            {liveQueue.loading && <small>Leyendo la cola real…</small>}
+            {liveQueue.offline && (
+              <>
+                <span>Puntaje de riesgo</span>
+                <em>—</em>
+                <small>No hay conexión con el servidor ahora. El número no se inventa.</small>
+              </>
+            )}
+            {!liveQueue.loading && !liveQueue.offline && !topWaiting && (
+              <>
+                <span>Puntaje de riesgo</span>
+                <em>—</em>
+                <small>Todavía no hay nadie en espera. El puntaje aparecerá con el primer ingreso real.</small>
+              </>
+            )}
+            {topWaiting && (
+              <>
+                <span>Caso más grave ahora en espera</span>
+                <em>{topWaiting.score.toFixed(1)}</em>
+                <small>
+                  {topWaiting.priority.chip}: {topWaiting.priority.meaning}
+                </small>
+              </>
+            )}
           </div>
         </aside>
       </div>
@@ -216,81 +263,78 @@ export default function App() {
         <Logo />
         <nav>
           {NAV.map(([id, label]) => (
-            <button key={id} className={view === id || (id === "registrar" && view === "resultado") ? "on" : ""} onClick={() => setView(id)}>
+            <button key={id} className={view === id || (id === "intake" && view === "result") ? "on" : ""} onClick={() => setView(id)}>
               {label}
             </button>
           ))}
         </nav>
         <div className="me">
-          <span className="ava">CP</span>
+          <span className="ava">UR</span>
           <div>
-            <b>{user.nombre}</b>
-            <small>{user.rol}</small>
+            <b>{user.displayName}</b>
+            <small>{user.role}</small>
           </div>
         </div>
       </aside>
 
       <div className="stage">
         <header className="bar">
-          <input placeholder="Buscar por nombre, documento o código…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input placeholder="Buscar por nombre o documento…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="bar-meta">
-            <span className="live">Modelo activo · {pack.data.length} casos</span>
+            <span className="live">{waiting.length} en espera (datos de la base)</span>
             <button className="text" onClick={() => setUser(null)}>Salir</button>
           </div>
         </header>
         {toast && <div className="toast">{toast}</div>}
 
-        {view === "inicio" && (
+        {view === "queue" && (
           <section className="page">
             <div className="hero-line">
               <div>
-                <h1>Sala de espera priorizada</h1>
-                <p>Ordenada por criticidad predicha, no por llegada. Si un paciente se descompensa, sube solo.</p>
+                <h1>Sala de espera</h1>
+                <p>El número 1 es quien tiene el puntaje más alto ahora. No es el que llegó primero.</p>
               </div>
-              <button className="btn" onClick={() => setView("registrar")}>Registrar ingreso</button>
+              <button className="btn" onClick={() => setView("intake")}>Nuevo ingreso</button>
             </div>
             <div className="stats">
-              <article><small>En espera</small><b>{espera.length}</b></article>
-              <article className="crit"><small>Criticidad ≥ 62</small><b>{espera.filter((p) => p.score >= 62).length}</b></article>
-              <article><small>Score medio</small><b>{espera.length ? (espera.reduce((a, p) => a + p.score, 0) / espera.length).toFixed(1) : "—"}</b></article>
-              <article><small>En atención</small><b>{pacientes.filter((p) => p.estado === "En atención").length}</b></article>
+              <article><small>En espera</small><b>{waiting.length}</b></article>
+              <article className="crit"><small>Puntaje 62 o más</small><b>{waiting.filter((p) => p.score >= 62).length}</b></article>
+              <article><small>Puntaje medio</small><b>{waiting.length ? (waiting.reduce((a, p) => a + p.score, 0) / waiting.length).toFixed(1) : "—"}</b></article>
+              <article><small>En atención</small><b>{patients.filter((p) => p.status === "En atención").length}</b></article>
             </div>
             <div className="split">
               <ol className="queue">
-                {espera.map((p, i) => (
-                  <li key={p.id} className={`q ${p.prioridad.tono} ${sel?.id === p.id ? "sel" : ""}`} onClick={() => setSel(p)}>
+                {waiting.length === 0 && <li className="empty">No hay pacientes en espera en la base de datos.</li>}
+                {waiting.map((p, i) => (
+                  <li key={p.id} className={`q ${p.priority.tone} ${selected?.id === p.id ? "sel" : ""}`} onClick={() => setSelected(p)}>
                     <em>{String(i + 1).padStart(2, "0")}</em>
                     <div>
-                      <strong>{p.nombre}</strong>
-                      <small>{p.codigo} · {LESIONES.find((l) => l.id === p.lesionId)?.label}</small>
+                      <strong>{p.name}</strong>
+                      <small>{CONDITIONS.find((c) => c.id === p.conditionId)?.label || "Motivo no indicado"}</small>
                     </div>
-                    <Chip p={p.prioridad} />
+                    <Chip priority={p.priority} />
                     <div className="sc">
-                      <b>{p.score.toFixed(1)}</b>
-                      <small>NEWS2 {p.news2}</small>
+                      <b>{Number(p.score).toFixed(1)}</b>
+                      <small>NEWS2 {p.news2 ?? "—"}</small>
                     </div>
-                    <span className="wait">{p.esperaMin || minutosEspera(p)} min</span>
+                    <span className="wait">{waitingMinutes(p)} min</span>
                   </li>
                 ))}
               </ol>
               <aside className="dossier">
-                {!sel && <p className="muted">Selecciona un paciente para ver el riesgo, reevaluar signos o pasarlo a atención.</p>}
-                {sel && (
+                {!selected && <p className="muted">Toca un paciente para ver por qué tiene ese puntaje.</p>}
+                {selected && selectedExplain && (
                   <>
-                    <Chip p={sel.prioridad} />
-                    <h2>{sel.nombre}</h2>
-                    <p className="muted">{LESIONES.find((l) => l.id === sel.lesionId)?.label} · {sel.edad} años</p>
-                    <div className="vit">
-                      <span>SpO₂ {sel.spo2}%</span>
-                      <span>FC {sel.fc}</span>
-                      <span>PA {sel.pas}/{sel.pad}</span>
-                      <span>T {sel.temp}°</span>
-                      <span>FR {sel.fr}</span>
-                    </div>
-                    <p className="scoreline">Criticidad <b>{sel.score.toFixed(1)}</b> · {sel.prioridad.esi}</p>
+                    <Chip priority={selected.priority} />
+                    <h2>{selected.name}</h2>
+                    <p className="muted">{selectedExplain.meaning}</p>
+                    <p className="scoreline">Puntaje <b>{Number(selected.score).toFixed(1)}</b> / 100</p>
+                    <ul className="why-list">
+                      {selectedExplain.reasons.slice(0, 4).map((r) => <li key={r}>{r}</li>)}
+                    </ul>
                     <div className="row-btns">
-                      <button className="btn" onClick={() => atender(sel.id)}>Pasar a atención</button>
-                      <button className="ghost" onClick={() => abrirRe(sel)}>Reevaluar signos</button>
+                      <button className="btn" onClick={() => moveToCare(selected.id)}>Pasar a atención</button>
+                      <button className="ghost" onClick={() => { setRecheck({ ...selected }); setView("recheck"); }}>Volver a medir signos</button>
                     </div>
                   </>
                 )}
@@ -299,50 +343,76 @@ export default function App() {
           </section>
         )}
 
-        {view === "registrar" && (
+        {view === "intake" && (
           <section className="page">
-            <h1>Ingreso y predicción</h1>
-            <p className="sub">El boosting tabular combina NEWS2, motivo clínico y comorbilidades.</p>
-            <form className="sheet" onSubmit={analizar}>
-              <h3>Identificación</h3>
+            <h1>Nuevo ingreso</h1>
+            <p className="sub">Escribe lo que ves o te dicen. No hace falta saber medicina: cada casilla explica qué pedir.</p>
+            <form className="sheet" onSubmit={analyze}>
+              <h3>Quién es</h3>
               <div className="g2">
-                <label>Nombre completo<input required value={form.nombre} onChange={(e) => setF("nombre", e.target.value)} /></label>
-                <label>Documento<input required value={form.doc} onChange={(e) => setF("doc", e.target.value)} /></label>
-                <label>Edad<input required type="number" min="0" max="120" value={form.edad} onChange={(e) => setF("edad", e.target.value)} /></label>
-                <label>Sexo
-                  <select value={form.sexo} onChange={(e) => setF("sexo", e.target.value)}>
+                <Field label="Nombre y apellido" help="Como aparece en la cédula o como se presenta.">
+                  <input required value={form.name} onChange={(e) => setField("name", e.target.value)} />
+                </Field>
+                <Field label="Documento" help="Cédula, tarjeta de identidad o pasaporte.">
+                  <input required value={form.document} onChange={(e) => setField("document", e.target.value)} />
+                </Field>
+                <Field label="Edad (años)" help="Si no la sabe, pregunte cuántos años tiene.">
+                  <input required type="number" min="0" max="120" value={form.age} onChange={(e) => setField("age", e.target.value)} />
+                </Field>
+                <Field label="Sexo">
+                  <select value={form.sex} onChange={(e) => setField("sex", e.target.value)}>
                     <option value="M">Masculino</option>
                     <option value="F">Femenino</option>
-                    <option value="O">Otro</option>
+                    <option value="O">Otro / no dice</option>
                   </select>
-                </label>
-                <label className="full">Lesión o enfermedad principal
-                  <select value={form.lesionId} onChange={(e) => setF("lesionId", e.target.value)}>
-                    {LESIONES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                </Field>
+                <Field className="full" label="¿Qué le pasa? (lo más grave)" help="Elija la opción que más se parezca. Eso cambia el orden de la cola.">
+                  <select required value={form.conditionId} onChange={(e) => setField("conditionId", e.target.value)}>
+                    <option value="">Seleccione una opción…</option>
+                    {CONDITIONS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                   </select>
-                </label>
-                <label className="full">Motivo de consulta<textarea rows="2" value={form.motivo} onChange={(e) => setF("motivo", e.target.value)} /></label>
+                </Field>
+                {form.conditionId && <p className="field-help full-note">{CONDITIONS.find((c) => c.id === form.conditionId)?.hint}</p>}
+                <Field className="full" label="Cuéntenos un poco más (opcional)" help="Con palabras simples: desde cuándo, si empeoró, si se golpeó.">
+                  <textarea rows="2" value={form.reason} onChange={(e) => setField("reason", e.target.value)} />
+                </Field>
               </div>
-              <h3>Signos vitales</h3>
+              <h3>Números del cuerpo (signos vitales)</h3>
+              <p className="sub">Los toma el tensiómetro, el termómetro y el clip del dedo (oxímetro). Si aún no los tienen, pídalos al que toma los signos.</p>
               <div className="g3">
-                <label>SpO₂ %<input required type="number" min="50" max="100" value={form.spo2} onChange={(e) => setF("spo2", e.target.value)} /></label>
-                <label>FC lpm<input required type="number" min="20" max="220" value={form.fc} onChange={(e) => setF("fc", e.target.value)} /></label>
-                <label>PAS mmHg<input required type="number" min="50" max="250" value={form.pas} onChange={(e) => setF("pas", e.target.value)} /></label>
-                <label>PAD mmHg<input required type="number" min="20" max="160" value={form.pad} onChange={(e) => setF("pad", e.target.value)} /></label>
-                <label>Temp °C<input required type="number" step="0.1" min="32" max="43" value={form.temp} onChange={(e) => setF("temp", e.target.value)} /></label>
-                <label>FR rpm<input required type="number" min="4" max="50" value={form.fr} onChange={(e) => setF("fr", e.target.value)} /></label>
+                <Field label="Oxígeno en sangre (%)" help="Clip en el dedo. Normal: 95 a 100. Si está bajo 94, avise.">
+                  <input required type="number" min="50" max="100" value={form.spo2} onChange={(e) => setField("spo2", e.target.value)} />
+                </Field>
+                <Field label="Latidos por minuto" help="Pulso. En un adulto tranquilo suele ser 60 a 100.">
+                  <input required type="number" min="20" max="220" value={form.heartRate} onChange={(e) => setField("heartRate", e.target.value)} />
+                </Field>
+                <Field label="Presión: número de arriba" help="El mayor del tensiómetro (sistólica). Ejemplo: en 120/80, este es 120.">
+                  <input required type="number" min="50" max="250" value={form.systolic} onChange={(e) => setField("systolic", e.target.value)} />
+                </Field>
+                <Field label="Presión: número de abajo" help="El menor (diastólica). En 120/80, este es 80.">
+                  <input required type="number" min="20" max="160" value={form.diastolic} onChange={(e) => setField("diastolic", e.target.value)} />
+                </Field>
+                <Field label="Temperatura (°C)" help="En la frente o axila. Un adulto suele estar cerca de 36.5 a 37.2.">
+                  <input required type="number" step="0.1" min="32" max="43" value={form.temperature} onChange={(e) => setField("temperature", e.target.value)} />
+                </Field>
+                <Field label="Respiraciones en un minuto" help="Cuente pechos que suben en 60 segundos. En reposo: más o menos 12 a 20.">
+                  <input required type="number" min="4" max="50" value={form.respiratoryRate} onChange={(e) => setField("respiratoryRate", e.target.value)} />
+                </Field>
               </div>
-              <h3>Antecedentes</h3>
+              <h3>¿Ya tenía alguna de estas enfermedades?</h3>
+              <p className="sub">Marque solo si la persona lo dice o está en un papel. Si no sabe, déjelo vacío.</p>
               <div className="checks">
-                {COMORBILIDADES.map((c) => (
+                {COMORBIDITIES.map((c) => (
                   <label key={c.id} className="chk">
                     <input
                       type="checkbox"
-                      checked={form.comorbIds.includes(c.id)}
+                      checked={form.comorbidityIds.includes(c.id)}
                       onChange={() =>
-                        setF(
-                          "comorbIds",
-                          form.comorbIds.includes(c.id) ? form.comorbIds.filter((x) => x !== c.id) : [...form.comorbIds, c.id]
+                        setField(
+                          "comorbidityIds",
+                          form.comorbidityIds.includes(c.id)
+                            ? form.comorbidityIds.filter((x) => x !== c.id)
+                            : [...form.comorbidityIds, c.id]
                         )
                       }
                     />
@@ -350,90 +420,84 @@ export default function App() {
                   </label>
                 ))}
               </div>
-              <button className="btn wide" type="submit">Calcular criticidad con el modelo</button>
+              <button className="btn wide" type="submit">Calcular puntaje y explicar</button>
             </form>
           </section>
         )}
 
-        {view === "resultado" && resultado && (
+        {view === "result" && result && (
           <section className="page">
-            <h1>Resultado del modelo</h1>
-            <p className="sub">Sugerencia automática. La decisión clínica la confirma el profesional.</p>
-            <div className={`banner ${resultado.prioridad.tono}`}>
+            <h1>Por qué salió este puntaje</h1>
+            <p className="sub">Es una guía. Quien atiende confirma si está de acuerdo.</p>
+            <div className={`banner ${result.priority.tone}`}>
               <div>
-                <small>{resultado.prioridad.esi} · {resultado.prioridad.nombre}</small>
-                <h2>Score {resultado.score.toFixed(1)} / 100</h2>
+                <small>{result.priority.esi} · {result.priority.name}</small>
+                <h2>{result.score.toFixed(1)} / 100</h2>
+                <p>{result.explanation.meaning}</p>
+                <p>{result.explanation.whyQueue}</p>
               </div>
-              <Chip p={resultado.prioridad} />
+              <Chip priority={result.priority} />
             </div>
             <div className="split">
               <div className="sheet">
-                <h3>Factores que empujan el score</h3>
-                {(resultado.factores || []).slice(0, 6).map((f) => (
-                  <div key={f.id} className="barline">
-                    <span>{f.nombre}</span>
-                    <i><b style={{ width: `${Math.min(100, Math.abs(f.peso) * 8)}%` }} /></i>
-                    <em>{f.peso > 0 ? "+" : ""}{f.peso}</em>
-                  </div>
-                ))}
+                <h3>En palabras simples</h3>
+                <ul className="why-list">
+                  {result.explanation.reasons.map((r) => <li key={r}>{r}</li>)}
+                </ul>
                 <div className="row-btns">
-                  <button className="btn" onClick={confirmar}>Confirmar e ingresar a cola</button>
-                  <button className="ghost" onClick={() => setView("registrar")}>Modificar</button>
+                  <button className="btn" onClick={confirmEntry}>Confirmar y poner en la cola</button>
+                  <button className="ghost" onClick={() => setView("intake")}>Corregir datos</button>
                 </div>
               </div>
               <div className="sheet">
-                <h3>Casos similares del dataset</h3>
-                <ul className="near">
-                  {(resultado.vecinos || []).map((v) => (
-                    <li key={v.id}>
-                      <b>{v.id}</b>
-                      <span>{LESIONES.find((l) => l.id === v.lesionId)?.label}</span>
-                      <em>{v.y.toFixed(1)}</em>
-                    </li>
-                  ))}
-                </ul>
-                <p className="muted">Vecinos más cercanos en el espacio de signos vitales y lesión.</p>
+                <h3>Cuánto aportó cada dato (modelo)</h3>
+                {(result.contributions || []).filter((f) => Math.abs(f.weight) >= 0.5).slice(0, 6).map((f) => (
+                  <div key={f.id} className="barline">
+                    <span>{f.name}</span>
+                    <i><b style={{ width: `${Math.min(100, Math.abs(f.weight) * 8)}%` }} /></i>
+                    <em>{f.weight > 0 ? "+" : ""}{f.weight}</em>
+                  </div>
+                ))}
+                <p className="muted">Un número positivo subió el puntaje. Uno negativo lo bajó. NEWS2 de esta persona: {result.news2}.</p>
               </div>
             </div>
           </section>
         )}
 
-        {view === "reevaluar" && re && (
+        {view === "recheck" && recheck && (
           <section className="page">
-            <h1>Reevaluación dinámica</h1>
-            <p className="sub">Si los signos se degradan, el boosting recalcula y la cola se reordena al instante.</p>
-            <form className="sheet" onSubmit={aplicarRe}>
-              <p><b>{re.nombre}</b> · score actual {predecirScore(pack.modelo, payload(re)).toFixed(1)}</p>
+            <h1>Volver a medir</h1>
+            <p className="sub">Si los números empeoran, el puntaje sube y puede adelantar en la cola. Puntaje actual: {predictScore(pack.model, toPayload(recheck)).toFixed(1)}.</p>
+            <form className="sheet" onSubmit={applyRecheck}>
+              <p><b>{recheck.name}</b></p>
               <div className="g3">
-                <label>SpO₂<input type="number" value={re.spo2} onChange={(e) => setRe({ ...re, spo2: e.target.value })} /></label>
-                <label>FC<input type="number" value={re.fc} onChange={(e) => setRe({ ...re, fc: e.target.value })} /></label>
-                <label>PAS<input type="number" value={re.pas} onChange={(e) => setRe({ ...re, pas: e.target.value })} /></label>
-                <label>PAD<input type="number" value={re.pad} onChange={(e) => setRe({ ...re, pad: e.target.value })} /></label>
-                <label>Temp<input type="number" step="0.1" value={re.temp} onChange={(e) => setRe({ ...re, temp: e.target.value })} /></label>
-                <label>FR<input type="number" value={re.fr} onChange={(e) => setRe({ ...re, fr: e.target.value })} /></label>
+                <Field label="Oxígeno %"><input type="number" value={recheck.spo2} onChange={(e) => setRecheck({ ...recheck, spo2: e.target.value })} /></Field>
+                <Field label="Latidos"><input type="number" value={recheck.heartRate} onChange={(e) => setRecheck({ ...recheck, heartRate: e.target.value, fc: e.target.value })} /></Field>
+                <Field label="Presión arriba"><input type="number" value={recheck.systolic} onChange={(e) => setRecheck({ ...recheck, systolic: e.target.value, pas: e.target.value })} /></Field>
+                <Field label="Presión abajo"><input type="number" value={recheck.diastolic} onChange={(e) => setRecheck({ ...recheck, diastolic: e.target.value, pad: e.target.value })} /></Field>
+                <Field label="Temperatura"><input type="number" step="0.1" value={recheck.temperature} onChange={(e) => setRecheck({ ...recheck, temperature: e.target.value, temp: e.target.value })} /></Field>
+                <Field label="Respiraciones"><input type="number" value={recheck.respiratoryRate} onChange={(e) => setRecheck({ ...recheck, respiratoryRate: e.target.value, fr: e.target.value })} /></Field>
               </div>
-              <div className="row-btns">
-                <button className="btn" type="submit">Recalcular y reordenar</button>
-                <button className="ghost" type="button" onClick={() => { setRe({ ...re, spo2: Math.max(72, Number(re.spo2) - 6), fc: Number(re.fc) + 18, fr: Number(re.fr) + 6 }); }}>Simular deterioro</button>
-              </div>
+              <button className="btn" type="submit">Recalcular y reordenar</button>
             </form>
           </section>
         )}
 
-        {view === "pacientes" && (
+        {view === "patients" && (
           <section className="page">
-            <h1>Pacientes</h1>
+            <h1>Pacientes (base de datos)</h1>
             <div className="sheet table-wrap">
+              {filtered.length === 0 && <p className="muted">No hay registros todavía.</p>}
               <table>
-                <thead><tr><th>Paciente</th><th>Lesión / enfermedad</th><th>Score</th><th>Prioridad</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Persona</th><th>Qué le pasa</th><th>Puntaje</th><th>Prioridad</th><th>Estado</th></tr></thead>
                 <tbody>
-                  {filtrados.sort(compararPrioridad).map((p) => (
+                  {filtered.sort(comparePriority).map((p) => (
                     <tr key={p.id}>
-                      <td><b>{p.nombre}</b><div className="muted">{p.codigo} · {p.edad} años</div></td>
-                      <td>{LESIONES.find((l) => l.id === p.lesionId)?.label}</td>
-                      <td>{p.score.toFixed(1)}</td>
-                      <td><Chip p={p.prioridad} /></td>
-                      <td>{p.estado}</td>
+                      <td><b>{p.name}</b><div className="muted">{p.age} años · {p.document}</div></td>
+                      <td>{CONDITIONS.find((c) => c.id === p.conditionId)?.label || "—"}</td>
+                      <td>{Number(p.score).toFixed(1)}</td>
+                      <td><Chip priority={p.priority} /></td>
+                      <td>{p.status}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -442,20 +506,19 @@ export default function App() {
           </section>
         )}
 
-        {view === "historial" && (
+        {view === "history" && (
           <section className="page">
             <h1>Historial</h1>
             <div className="sheet table-wrap">
               <table>
-                <thead><tr><th>Paciente</th><th>Hora</th><th>Modelo</th><th>NEWS2</th><th>Médico</th></tr></thead>
+                <thead><tr><th>Persona</th><th>Hora del puntaje</th><th>Prioridad</th><th>NEWS2</th></tr></thead>
                 <tbody>
-                  {pacientes.map((p) => (
+                  {patients.map((p) => (
                     <tr key={p.id}>
-                      <td>{p.nombre}</td>
-                      <td>{new Date(p.llegada).toLocaleString("es-CO")}</td>
-                      <td><Chip p={p.prioridad} /></td>
-                      <td>{p.news2}</td>
-                      <td>Dr. Carlos Pérez</td>
+                      <td>{p.name}</td>
+                      <td>{new Date(p.arrivedAt).toLocaleString("es-CO")}</td>
+                      <td><Chip priority={p.priority} /></td>
+                      <td>{p.news2 ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -464,56 +527,46 @@ export default function App() {
           </section>
         )}
 
-        {view === "modelo" && (
+        {view === "model" && (
           <section className="page">
-            <h1>Modelo y dataset</h1>
-            <p className="sub">Gradient boosting sobre {pack.data.length} casos tabulares sintéticos etiquetados con protocolo NEWS2 + gravedad ESI de la lesión.</p>
-            <div className="stats">
-              <article><small>Casos</small><b>{pack.data.length}</b></article>
-              <article><small>Entrenamiento</small><b>{pack.train.length}</b></article>
-              <article><small>Prueba</small><b>{pack.test.length}</b></article>
-              <article><small>MAE en test</small><b>{pack.metricas.mae}</b></article>
-            </div>
+            <h1>Cómo se calcula</h1>
+            <p className="sub">
+              El modelo se entrenó con {pack.train.length} ejemplos de práctica (no son pacientes de este hospital).
+              El error medio en {pack.metrics.n} ejemplos de prueba es {pack.metrics.mae} puntos. La cola que ves arriba sí son registros reales de Supabase.
+            </p>
             <div className="split">
               <div className="sheet">
-                <h3>Importancia de variables (splits del boosting)</h3>
-                {pack.importancia.map((f) => (
-                  <div key={f.feat} className="barline">
-                    <span>{f.feat}</span>
-                    <i><b style={{ width: `${f.p}%` }} /></i>
-                    <em>{f.p}%</em>
+                <h3>Qué datos usa más el modelo</h3>
+                {pack.importance.map((f) => (
+                  <div key={f.feature} className="barline">
+                    <span>{f.feature}</span>
+                    <i><b style={{ width: `${f.percent}%` }} /></i>
+                    <em>{f.percent}%</em>
                   </div>
                 ))}
               </div>
               <div className="sheet">
-                <h3>Cómo decide quién entra primero</h3>
+                <h3>Quién pasa primero</h3>
                 <ol className="steps">
-                  <li>Se vectorizan signos vitales, NEWS2, índice de shock, comorbilidades y gravedad de la lesión.</li>
-                  <li>Un ensamble de tocones (estil XGBoost) predice un score continuo 0–100.</li>
-                  <li>La cola en espera se ordena por score descendente; a igualdad, por hora de llegada.</li>
-                  <li>Una reevaluación vuelve a puntuar y mueve al paciente en milisegundos.</li>
+                  <li>Se leen oxígeno, pulso, presión, temperatura, respiración, edad, motivo y enfermedades previas.</li>
+                  <li>Sale un puntaje de 0 (más estable) a 100 (más grave).</li>
+                  <li>La lista se ordena del puntaje más alto al más bajo. Si empatan, gana quien llegó antes.</li>
+                  <li>Si se vuelven a tomar los signos y empeoran, el puntaje sube y puede adelantar.</li>
                 </ol>
               </div>
             </div>
           </section>
         )}
 
-        {view === "config" && (
+        {view === "ethics" && (
           <section className="page">
-            <h1>IA responsable</h1>
-            <div className="split">
-              <div className="sheet">
-                <h3>Límites del sistema</h3>
-                <ul className="bullets">
-                  <li>El modelo apoya; no sustituye el juicio clínico.</li>
-                  <li>Hay umbrales de seguridad (SpO₂, PAS, FR) que fuerzan criticidad alta.</li>
-                  <li>Los datos de esta demo son sintéticos, no historia clínica real.</li>
-                </ul>
-              </div>
-              <div className="sheet">
-                <h3>Privacidad</h3>
-                <p className="muted">En este avance todo corre en el navegador. No hay PostgreSQL ni envío a servidor. El backend llegará en una siguiente etapa.</p>
-              </div>
+            <h1>Uso responsable</h1>
+            <div className="sheet">
+              <ul className="bullets">
+                <li>Esto ayuda a ordenar la cola. No reemplaza al médico ni a la enfermería.</li>
+                <li>Si el oxígeno, la presión o la respiración están muy mal, el sistema sube el puntaje a propósito.</li>
+                <li>Los pacientes de la sala salen de la base PostgreSQL (Supabase). No se muestran nombres inventados.</li>
+              </ul>
             </div>
           </section>
         )}
