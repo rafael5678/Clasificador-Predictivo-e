@@ -1,3 +1,4 @@
+import { findSymptom } from "./catalog";
 import { CONDITIONS } from "./ml/conditions";
 import { news2Score } from "./ml/dataset";
 import { priorityFromScore } from "./ml/model";
@@ -17,7 +18,8 @@ export function explainWhy(patient) {
   const age = num(patient.age ?? patient.edad);
   const score = num(patient.score);
   const priority = patient.priority || priorityFromScore(score);
-  const condition = CONDITIONS.find((c) => c.id === (patient.conditionId || patient.lesionId));
+  const condition = findSymptom(patient.conditionId || patient.lesionId)
+    || CONDITIONS.find((c) => c.id === (patient.conditionId || patient.lesionId));
   const news = news2Score(patient);
 
   const reasons = [];

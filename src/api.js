@@ -15,7 +15,10 @@ async function request(path, options = {}, timeoutMs = 8000) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(err.error || "Error de API");
     }
-    return res.json();
+    if (res.status === 204) return null;
+    const text = await res.text();
+    if (!text) return null;
+    return JSON.parse(text);
   } catch (error) {
     if (error.name === "AbortError") throw new Error("El servidor tardó en responder (Render se está despertando).");
     throw error;
@@ -120,6 +123,46 @@ export async function reevaluatePatient(id, form) {
 
 export async function startCare(id) {
   return mapFromApi(await request(`/api/v1/triage/atender/${id}`, { method: "PATCH" }));
+}
+
+export async function login(credentials) {
+  return request("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      username: credentials.username,
+      password: credentials.password,
+    }),
+  }, 25000);
+}
+
+export async function fetchSymptoms() {
+  return request("/api/v1/catalogo/sintomas");
+}
+
+export async function fetchAdminSymptoms() {
+  return request("/api/v1/admin/sintomas");
+}
+
+export async function saveSymptom(payload) {
+  return request("/api/v1/admin/sintomas", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAdminUsers() {
+  return request("/api/v1/admin/users");
+}
+
+export async function createUser(payload) {
+  return request("/api/v1/admin/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setUserActive(id, activo) {
+  return request(`/api/v1/admin/users/${id}/activo?activo=${activo}`, { method: "PATCH" });
 }
 
 export const cargarPacientes = fetchPatients;

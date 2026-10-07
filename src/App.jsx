@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { COMORBIDITIES, CONDITIONS } from "./ml/conditions";
+import { COMORBIDITIES } from "./ml/conditions";
 import { featureContributions, getModel, predictScore } from "./ml/model";
 import { comparePriority, createPatient } from "./patient";
 import { explainWhy } from "./explain";
-import { fetchPatients, registerAndScore, reevaluatePatient, startCare } from "./api";
+import { fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "./api";
 import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "./waitTimes";
+import { conditionLabel, setSymptomCatalog, symptomCatalog } from "./catalog";
+import AdminPortal from "./AdminPortal";
+
+const SESSION_KEY = "triage.session";
 
 const NAV = [
   ["queue", "Sala de espera"],
@@ -61,11 +65,22 @@ function Field({ label, help, children, className }) {
   );
 }
 
+function readSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const pack = useMemo(() => getModel(), []);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(readSession);
   const [login, setLogin] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [catalog, setCatalog] = useState([]);
   const [view, setView] = useState("queue");
   const [form, setForm] = useState(EMPTY_FORM);
   const [patients, setPatients] = useState([]);
@@ -86,6 +101,22 @@ export default function App() {
       .then((list) => setLiveQueue({ loading: false, patients: list.filter((p) => p.status === "En espera").sort(comparePriority) }))
       .catch(() => setLiveQueue({ loading: false, patients: [], offline: true }));
   }, []);
+
+  useEffect(() => {
+    if (!user || user.role === "ADMIN") return;
+    fetchSymptoms()
+      .then((rows) => {
+        setSymptomCatalog(rows);
+        setCatalog(rows);
+      })
+      .catch(() => {
+        setSymptomCatalog([]);
+        setCatalog([]);
+      });
+    fetchPatients()
+      .then((list) => setPatients(list))
+      .catch(() => setPatients([]));
+  }, [user]);
 
   function flash(message) {
     setToast(message);
@@ -117,20 +148,27 @@ export default function App() {
     };
   }
 
-  function onLogin(event) {
+  async function onLogin(event) {
     event.preventDefault();
-    if (login.username.trim() === "medico" && login.password === "triage123") {
-      setUser({ displayName: "Personal de urgencias", role: "Acceso de trabajo" });
-      setLoginError("");
-      fetchPatients()
-        .then((list) => setPatients(list))
-        .catch(() => {
-          setPatients([]);
-          flash("No se pudo leer la base. Revisa que Render esté activo.");
-        });
-      return;
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const session = await loginRequest(login);
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      setUser(session);
+    } catch (error) {
+      setLoginError(error.message || "Usuario o contraseña incorrectos.");
+    } finally {
+      setLoginBusy(false);
     }
-    setLoginError("Usuario o contraseña incorrectos.");
+  }
+
+  function logout() {
+    sessionStorage.removeItem(SESSION_KEY);
+    setUser(null);
+    setPatients([]);
+    setCatalog([]);
+    setSymptomCatalog([]);
   }
 
   function analyze(event) {
@@ -207,6 +245,7 @@ export default function App() {
 
   const topWaiting = liveQueue.patients[0];
   const selectedExplain = selected ? explainWhy(selected) : null;
+  const conditions = catalog.length ? catalog : symptomCatalog();
 
   if (!user) {
     return (
@@ -222,8 +261,8 @@ export default function App() {
             <label>Usuario<input autoComplete="username" value={login.username} onChange={(e) => setLogin({ ...login, username: e.target.value })} /></label>
             <label>Contraseña<input type="password" autoComplete="current-password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} /></label>
             {loginError && <p className="form-err">{loginError}</p>}
-            <button className="btn" type="submit">Entrar a urgencias</button>
-            <p className="hint">Acceso de trabajo: usuario <b>medico</b> · contraseña <b>triage123</b></p>
+            <button className="btn" type="submit" disabled={loginBusy}>{loginBusy ? "Comprobando…" : "Entrar"}</button>
+            <p className="hint">El sistema abre urgencias o administración según la cuenta que exista en la base de datos.</p>
           </form>
         </section>
         <aside className="auth-visual">
@@ -267,6 +306,10 @@ export default function App() {
     );
   }
 
+  if (user.role === "ADMIN") {
+    return <AdminPortal user={user} onLogout={logout} />;
+  }
+
   return (
     <div className="app">
       <aside className="side">
@@ -282,7 +325,7 @@ export default function App() {
           <span className="ava">UR</span>
           <div>
             <b>{user.displayName}</b>
-            <small>{user.role}</small>
+            <small>Personal de urgencias</small>
           </div>
         </div>
       </aside>
@@ -292,7 +335,7 @@ export default function App() {
           <input placeholder="Buscar por nombre o documento…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="bar-meta">
             <span className="live">{waiting.length} en espera (datos de la base)</span>
-            <button className="text" onClick={() => setUser(null)}>Salir</button>
+            <button className="text" onClick={logout}>Salir</button>
           </div>
         </header>
         {toast && <div className="toast">{toast}</div>}
@@ -320,7 +363,7 @@ export default function App() {
                     <em>{String(i + 1).padStart(2, "0")}</em>
                     <div>
                       <strong>{p.name}</strong>
-                      <small>{CONDITIONS.find((c) => c.id === p.conditionId)?.label || "Motivo no indicado"}</small>
+                      <small>{conditionLabel(p.conditionId)}</small>
                     </div>
                     <Chip priority={p.priority} />
                     <div className="sc">
@@ -380,10 +423,10 @@ export default function App() {
                 <Field className="full" label="¿Qué le pasa? (lo más grave)" help="Elija la opción que más se parezca. Eso cambia el orden de la cola.">
                   <select required value={form.conditionId} onChange={(e) => setField("conditionId", e.target.value)}>
                     <option value="">Seleccione una opción…</option>
-                    {CONDITIONS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    {conditions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                   </select>
                 </Field>
-                {form.conditionId && <p className="field-help full-note">{CONDITIONS.find((c) => c.id === form.conditionId)?.hint}</p>}
+                {form.conditionId && <p className="field-help full-note">{conditions.find((c) => c.id === form.conditionId)?.hint}</p>}
                 <Field className="full" label="Cuéntenos un poco más (opcional)" help="Con palabras simples: desde cuándo, si empeoró, si se golpeó.">
                   <textarea rows="2" value={form.reason} onChange={(e) => setField("reason", e.target.value)} />
                 </Field>
@@ -509,7 +552,7 @@ export default function App() {
                   {filtered.sort(comparePriority).map((p) => (
                     <tr key={p.id}>
                       <td><b>{p.name}</b><div className="muted">{p.age} años · {p.document}</div></td>
-                      <td>{CONDITIONS.find((c) => c.id === p.conditionId)?.label || "—"}</td>
+                      <td>{conditionLabel(p.conditionId)}</td>
                       <td>{Number(p.score).toFixed(1)}</td>
                       <td><Chip priority={p.priority} /></td>
                       <td>{p.status}</td>

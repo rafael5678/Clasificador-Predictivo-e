@@ -1,3 +1,4 @@
+import { findSymptom } from "./catalog";
 import { CONDITIONS } from "./ml/conditions";
 import { news2Score } from "./ml/dataset";
 import { getModel, predictScore, priorityFromScore } from "./ml/model";
@@ -50,6 +51,6 @@ export function createPatient(data, model) {
     estado: data.status || data.estado || "En espera",
     arrivedAt: data.arrivedAt || data.llegada || Date.now(),
     llegada: data.arrivedAt || data.llegada || Date.now(),
-    conditionLabel: CONDITIONS.find((c) => c.id === normalized.conditionId)?.label,
+    conditionLabel: findSymptom(normalized.conditionId)?.label || CONDITIONS.find((c) => c.id === normalized.conditionId)?.label,
   };
 }

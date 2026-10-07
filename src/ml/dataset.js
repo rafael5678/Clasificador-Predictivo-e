@@ -1,3 +1,4 @@
+import { findSymptom } from "../catalog";
 import { COMORBIDITIES, CONDITIONS } from "./conditions";
 
 export { COMORBIDITIES, CONDITIONS };
@@ -61,7 +62,9 @@ export function clinicalLabel(row) {
   const sbp = Number(row.systolic ?? row.pas);
   const shock = hr / Math.max(40, sbp);
   const age = Number(row.age ?? row.edad);
-  const condition = CONDITIONS.find((c) => c.id === row.conditionId || c.id === row.lesionId) || CONDITIONS[9];
+  const condition = findSymptom(row.conditionId || row.lesionId)
+    || CONDITIONS.find((c) => c.id === row.conditionId || c.id === row.lesionId)
+    || CONDITIONS[9];
   const comorb = (row.comorbidityIds || row.comorbIds || []).reduce((sum, id) => {
     const item = COMORBIDITIES.find((c) => c.id === id);
     return sum + (item ? item.weight : 0);
@@ -109,7 +112,8 @@ export function generateDataset(n = 140) {
 export const FEATURES = ["age", "heartRate", "spo2", "systolic", "diastolic", "temperature", "respiratoryRate", "news", "shock", "comorbidity", "condition"];
 
 export function toFeatures(row) {
-  const condition = CONDITIONS.find((c) => c.id === (row.conditionId || row.lesionId));
+  const condition = findSymptom(row.conditionId || row.lesionId)
+    || CONDITIONS.find((c) => c.id === (row.conditionId || row.lesionId));
   const comorbidity = (row.comorbidityIds || row.comorbIds || []).reduce((sum, id) => sum + (COMORBIDITIES.find((c) => c.id === id)?.weight || 0), 0);
   const systolic = Number(row.systolic ?? row.pas) || 120;
   const heartRate = Number(row.heartRate ?? row.fc) || 0;
