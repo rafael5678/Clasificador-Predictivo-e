@@ -46,10 +46,22 @@ export function explainWhy(patient) {
   else if (news >= 5) reasons.push(`NEWS2 = ${news}: hay que vigilar de cerca.`);
   else reasons.push(`NEWS2 = ${news} (0 es lo más estable en esa escala).`);
 
+  const danger = [];
+  if (spo2 < 90) danger.push("casi no le llega oxígeno a la sangre");
+  if (hr > 130 || hr < 40) danger.push("el corazón no late como debería");
+  if (sbp < 90) danger.push("la presión está demasiado baja");
+  if (temp <= 35) danger.push("el cuerpo está muy frío");
+  if (rr >= 25 || rr <= 8) danger.push("no está respirando de forma estable");
+
+  const dangerLead = danger.length
+    ? `Está grave porque ${danger.join(", ")}.`
+    : priority.meaning;
+
   return {
     score,
     news2: news,
     priority,
+    dangerLead,
     headline: `Puntaje ${score} de 100 · ${priority.chip}`,
     meaning: priority.meaning,
     whyQueue: score >= 62

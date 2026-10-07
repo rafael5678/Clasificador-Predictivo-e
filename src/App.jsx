@@ -441,19 +441,22 @@ export default function App() {
             <h1>Por qué salió este puntaje</h1>
             <p className="sub">Es una guía. Quien atiende confirma si está de acuerdo.</p>
             <div className={`banner ${result.priority.tone}`}>
-              <div>
-                <small>{result.priority.esi} · {result.priority.name}</small>
-                <h2>{result.score.toFixed(1)} / 100</h2>
+              <div className={`severity-stamp ${result.priority.tone}`}>
+                {result.priority.chip}
+              </div>
+              <div className="banner-copy">
+                <p className="severity-kicker">{result.priority.esi} · {result.priority.name}</p>
+                <h2>{result.score.toFixed(1)} <span>/ 100</span></h2>
+                <p className="danger-lead">{result.explanation.dangerLead}</p>
                 <p>{result.explanation.meaning}</p>
                 <p>{result.explanation.whyQueue}</p>
                 <p>{waitSummary(result.score, waiting).text} Porcentaje de espera: {waitSharePercent(result.score)}% (un caso leve ≈ 100%, un caso crítico ≈ 2%).</p>
               </div>
-              <Chip priority={result.priority} />
             </div>
             <div className="split">
               <div className="sheet">
-                <h3>En palabras simples</h3>
-                <ul className="why-list">
+                <h3>Por qué está así (con sus números)</h3>
+                <ul className="why-list big">
                   {result.explanation.reasons.map((r) => <li key={r}>{r}</li>)}
                 </ul>
                 <div className="row-btns">
