@@ -23,6 +23,22 @@ export function explainWhy(patient) {
   const news = news2Score(patient);
 
   const reasons = [];
+  if (Array.isArray(patient.iaReasons) && patient.iaReasons.length) {
+    const dangerLead = patient.dangerLead || priority.meaning;
+    return {
+      score,
+      news2: news,
+      priority,
+      dangerLead,
+      headline: `Puntaje ${score} de 100 · ${priority.chip}`,
+      meaning: patient.meaningIa || priority.meaning,
+      whyQueue: score >= 62
+        ? "Por este puntaje va adelante de quien llegó antes si esa persona está más estable."
+        : "No es el caso más grave de la sala, según estos números.",
+      reasons: patient.iaReasons,
+      iaActiva: Boolean(patient.iaActiva),
+    };
+  }
   if (spo2 < 90) reasons.push(`El oxígeno en la sangre está muy bajo (${spo2}%). Lo normal es 95 a 100. Eso sube mucho el puntaje.`);
   else if (spo2 < 94) reasons.push(`El oxígeno está un poco bajo (${spo2}%). Lo normal es 95 a 100.`);
   else if (spo2 >= 95) reasons.push(`El oxígeno está en un rango aceptable (${spo2}%).`);

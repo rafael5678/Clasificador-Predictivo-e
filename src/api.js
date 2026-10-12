@@ -58,6 +58,11 @@ export function mapFromApi(row) {
     status: STATUS[row.estado] || "En espera",
     arrivedAt,
     comorbidityIds: [],
+    fuenteScore: row.fuenteScore,
+    iaActiva: Boolean(row.iaActiva),
+    dangerLead: row.dangerLead,
+    meaningIa: row.meaningIa,
+    iaReasons: row.razonesIa || [],
     fc: row.frecuenciaCardiaca,
     pas: row.presionSistolica,
     pad: row.presionDiastolica,
@@ -102,7 +107,29 @@ export async function registerAndScore(form) {
       temperatura: Number(form.temperature ?? form.temp),
       frecuenciaRespiratoria: Number(form.respiratoryRate ?? form.fr),
     }),
-  });
+  }, 25000);
+  return mapFromApi(scored);
+}
+
+export async function analyzeTriage(form) {
+  const scored = await request("/api/v1/triage/analizar", {
+    method: "POST",
+    body: JSON.stringify({
+      nombre: form.name || form.nombre,
+      documento: form.document || form.doc,
+      edad: Number(form.age ?? form.edad),
+      sexo: form.sex || form.sexo,
+      lesionId: form.conditionId || form.lesionId,
+      motivo: form.reason || form.motivo,
+      antecedentes: (form.comorbidityIds || form.comorbIds || []).join(", "),
+      frecuenciaCardiaca: Number(form.heartRate ?? form.fc),
+      spo2: Number(form.spo2),
+      presionSistolica: Number(form.systolic ?? form.pas),
+      presionDiastolica: Number(form.diastolic ?? form.pad),
+      temperatura: Number(form.temperature ?? form.temp),
+      frecuenciaRespiratoria: Number(form.respiratoryRate ?? form.fr),
+    }),
+  }, 25000);
   return mapFromApi(scored);
 }
 
@@ -117,7 +144,7 @@ export async function reevaluatePatient(id, form) {
       temperatura: Number(form.temperature ?? form.temp),
       frecuenciaRespiratoria: Number(form.respiratoryRate ?? form.fr),
     }),
-  });
+  }, 25000);
   return mapFromApi(scored);
 }
 

@@ -3,7 +3,7 @@ import { COMORBIDITIES } from "./ml/conditions";
 import { featureContributions, getModel, predictScore } from "./ml/model";
 import { comparePriority, createPatient } from "./patient";
 import { explainWhy } from "./explain";
-import { fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "./api";
+import { analyzeTriage, fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "./api";
 import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "./waitTimes";
 import { conditionLabel, setSymptomCatalog, symptomCatalog } from "./catalog";
 import AdminPortal from "./AdminPortal";
@@ -80,6 +80,7 @@ export default function App() {
   const [login, setLogin] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
+  const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [catalog, setCatalog] = useState([]);
   const [view, setView] = useState("queue");
   const [form, setForm] = useState(EMPTY_FORM);
@@ -171,14 +172,26 @@ export default function App() {
     setSymptomCatalog([]);
   }
 
-  function analyze(event) {
+  async function analyze(event) {
     event.preventDefault();
     if (!form.conditionId) return;
-    const patient = createPatient(toPayload(form), pack.model);
-    patient.contributions = featureContributions(pack.model, patient);
-    patient.explanation = explainWhy(patient);
-    setResult(patient);
-    setView("result");
+    setAnalyzeBusy(true);
+    const local = createPatient(toPayload(form), pack.model);
+    local.contributions = featureContributions(pack.model, local);
+    try {
+      const scored = await analyzeTriage(toPayload(form));
+      const patient = { ...local, ...scored, name: form.name, document: form.document, comorbidityIds: form.comorbidityIds };
+      patient.explanation = explainWhy(patient);
+      setResult(patient);
+      setView("result");
+    } catch (error) {
+      local.explanation = explainWhy(local);
+      setResult(local);
+      setView("result");
+      flash(`Se usó el protocolo local: ${error.message}`);
+    } finally {
+      setAnalyzeBusy(false);
+    }
   }
 
   async function confirmEntry() {
@@ -473,7 +486,7 @@ export default function App() {
                   </label>
                 ))}
               </div>
-              <button className="btn wide" type="submit">Calcular puntaje y explicar</button>
+              <button className="btn wide" type="submit" disabled={analyzeBusy}>{analyzeBusy ? "Analizando con el protocolo y la IA…" : "Calcular puntaje y explicar"}</button>
             </form>
           </section>
         )}
@@ -481,7 +494,7 @@ export default function App() {
         {view === "result" && result && (
           <section className="page">
             <h1>Por qué salió este puntaje</h1>
-            <p className="sub">Es una guía. Quien atiende confirma si está de acuerdo.</p>
+            <p className="sub">Es una guía. Quien atiende confirma si está de acuerdo.{result.iaActiva ? " La explicación combina el protocolo del hospital con apoyo de IA." : ""}</p>
             <div className={`banner ${result.priority.tone}`}>
               <div className={`severity-stamp ${result.priority.tone}`}>
                 {result.priority.chip}
@@ -588,8 +601,8 @@ export default function App() {
           <section className="page">
             <h1>Cómo se calcula</h1>
             <p className="sub">
-              El modelo se entrenó con {pack.train.length} ejemplos de práctica (no son pacientes de este hospital).
-              El error medio en {pack.metrics.n} ejemplos de prueba es {pack.metrics.mae} puntos. La cola que ves arriba sí son registros reales de Supabase.
+              El puntaje de la cola sale del protocolo (NEWS2, signos, motivo y enfermedades) y, si hay llave configurada, Gemini puede subir un poco el riesgo si el relato clínico lo justifica. Nunca lo baja si los signos ya están graves.
+              El gráfico de abajo es el modelo local de práctica ({pack.train.length} ejemplos; error medio {pack.metrics.mae} puntos).
             </p>
             <div className="split">
               <div className="sheet">
@@ -623,6 +636,7 @@ export default function App() {
                 <li>Esto ayuda a ordenar la cola. No reemplaza al médico ni a la enfermería.</li>
                 <li>Si el oxígeno, la presión o la respiración están muy mal, el sistema sube el puntaje a propósito.</li>
                 <li>Los pacientes de la sala salen de la base PostgreSQL (Supabase). No se muestran nombres inventados.</li>
+                <li>La IA no decide sola: el protocolo de signos vitales manda. Un clínico confirma.</li>
               </ul>
             </div>
           </section>
