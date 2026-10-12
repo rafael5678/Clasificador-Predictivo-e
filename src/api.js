@@ -63,6 +63,10 @@ export function mapFromApi(row) {
     dangerLead: row.dangerLead,
     meaningIa: row.meaningIa,
     iaReasons: row.razonesIa || [],
+    datasetReasons: row.razonesDataset || [],
+    geminiReasons: row.razonesGemini || [],
+    scoreProtocolo: row.scoreProtocolo,
+    scoreGemini: row.scoreGemini,
     fc: row.frecuenciaCardiaca,
     pas: row.presionSistolica,
     pad: row.presionDiastolica,
@@ -111,7 +115,7 @@ export async function registerAndScore(form) {
   return mapFromApi(scored);
 }
 
-export async function analyzeTriage(form) {
+export async function analyzeTriage(form, scoreModeloLocal) {
   const scored = await request("/api/v1/triage/analizar", {
     method: "POST",
     body: JSON.stringify({
@@ -128,6 +132,7 @@ export async function analyzeTriage(form) {
       presionDiastolica: Number(form.diastolic ?? form.pad),
       temperatura: Number(form.temperature ?? form.temp),
       frecuenciaRespiratoria: Number(form.respiratoryRate ?? form.fr),
+      scoreModeloLocal: scoreModeloLocal == null ? null : Number(scoreModeloLocal),
     }),
   }, 25000);
   return mapFromApi(scored);

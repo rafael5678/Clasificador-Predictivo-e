@@ -179,7 +179,7 @@ export default function App() {
     const local = createPatient(toPayload(form), pack.model);
     local.contributions = featureContributions(pack.model, local);
     try {
-      const scored = await analyzeTriage(toPayload(form));
+      const scored = await analyzeTriage(toPayload(form), local.score);
       const patient = { ...local, ...scored, name: form.name, document: form.document, comorbidityIds: form.comorbidityIds };
       patient.explanation = explainWhy(patient);
       setResult(patient);
@@ -494,7 +494,7 @@ export default function App() {
         {view === "result" && result && (
           <section className="page">
             <h1>Por qué salió este puntaje</h1>
-            <p className="sub">Es una guía. Quien atiende confirma si está de acuerdo.{result.iaActiva ? " La explicación combina el protocolo del hospital con apoyo de IA." : ""}</p>
+            <p className="sub">Es una guía. Quien atiende confirma si está de acuerdo. El puntaje mezcla el dataset del hospital con el criterio clínico de Gemini.</p>
             <div className={`banner ${result.priority.tone}`}>
               <div className={`severity-stamp ${result.priority.tone}`}>
                 {result.priority.chip}
@@ -510,26 +510,31 @@ export default function App() {
             </div>
             <div className="split">
               <div className="sheet">
-                <h3>Por qué está así (con sus números)</h3>
+                <h3>Dataset del hospital</h3>
+                {result.scoreProtocolo != null && <p className="muted">Puntaje del protocolo: {Number(result.scoreProtocolo).toFixed(1)}</p>}
                 <ul className="why-list big">
-                  {result.explanation.reasons.map((r) => <li key={r}>{r}</li>)}
+                  {(result.datasetReasons?.length ? result.datasetReasons : result.explanation.reasons.slice(0, 3)).map((r) => <li key={r}>{r}</li>)}
                 </ul>
-                <div className="row-btns">
-                  <button className="btn" onClick={confirmEntry}>Confirmar y poner en la cola</button>
-                  <button className="ghost" onClick={() => setView("intake")}>Corregir datos</button>
-                </div>
               </div>
               <div className="sheet">
-                <h3>Cuánto aportó cada dato (modelo)</h3>
-                {(result.contributions || []).filter((f) => Math.abs(f.weight) >= 0.5).slice(0, 6).map((f) => (
+                <h3>Criterio de Gemini</h3>
+                {result.iaActiva && result.scoreGemini != null && <p className="muted">Puntaje que sugiere la IA: {Number(result.scoreGemini).toFixed(1)}</p>}
+                {!result.iaActiva && <p className="muted">Gemini aún no respondió. Se usó solo el protocolo. Revisa GEMINI_API_KEY en Render.</p>}
+                <ul className="why-list big">
+                  {(result.geminiReasons || []).map((r) => <li key={r}>{r}</li>)}
+                </ul>
+                {(result.contributions || []).filter((f) => Math.abs(f.weight) >= 0.5).slice(0, 4).map((f) => (
                   <div key={f.id} className="barline">
                     <span>{f.name}</span>
                     <i><b style={{ width: `${Math.min(100, Math.abs(f.weight) * 8)}%` }} /></i>
                     <em>{f.weight > 0 ? "+" : ""}{f.weight}</em>
                   </div>
                 ))}
-                <p className="muted">Un número positivo subió el puntaje. Uno negativo lo bajó. NEWS2 de esta persona: {result.news2}.</p>
               </div>
+            </div>
+            <div className="row-btns" style={{ marginTop: 16 }}>
+              <button className="btn" onClick={confirmEntry}>Confirmar y poner en la cola</button>
+              <button className="ghost" onClick={() => setView("intake")}>Corregir datos</button>
             </div>
           </section>
         )}
