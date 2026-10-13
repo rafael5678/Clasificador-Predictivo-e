@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { COMORBIDITIES } from "./ml/conditions";
-import { featureContributions, getModel, predictScore } from "./ml/model";
-import { comparePriority, createPatient } from "./patient";
-import { explainWhy } from "./explain";
-import { analyzeTriage, fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "./api";
-import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "./waitTimes";
-import { conditionLabel, setSymptomCatalog, symptomCatalog } from "./catalog";
+import { COMORBIDITIES } from "../ml/conditions";
+import { featureContributions, getModel, predictScore } from "../ml/model";
+import { comparePriority, createPatient } from "../domain/patient";
+import { explainWhy } from "../domain/explain";
+import { analyzeTriage, fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "../infrastructure/api";
+import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "../domain/waitTimes";
+import { conditionLabel, setSymptomCatalog, symptomCatalog } from "../domain/catalog";
 import AdminPortal from "./AdminPortal";
 
 const SESSION_KEY = "triage.session";

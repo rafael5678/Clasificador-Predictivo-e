@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { createUser, fetchAdminSymptoms, fetchAdminUsers, fetchPatients, saveSymptom, setUserActive } from "./api";
-import { comparePriority } from "./patient";
+import { createUser, fetchAdminSymptoms, fetchAdminUsers, fetchPatients, saveSymptom, setUserActive } from "../infrastructure/api";
+import { comparePriority } from "../domain/patient";
 
 function Logo() {
   return (

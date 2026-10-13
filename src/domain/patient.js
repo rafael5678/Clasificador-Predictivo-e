@@ -1,7 +1,7 @@
 import { findSymptom } from "./catalog";
-import { CONDITIONS } from "./ml/conditions";
-import { news2Score } from "./ml/dataset";
-import { getModel, predictScore, priorityFromScore } from "./ml/model";
+import { CONDITIONS } from "../ml/conditions";
+import { news2Score } from "../ml/dataset";
+import { getModel, predictScore, priorityFromScore } from "../ml/model";
 
 export function comparePriority(a, b) {
   if (b.score !== a.score) return b.score - a.score;

@@ -1,4 +1,4 @@
-import { priorityFromScore } from "./ml/model";
+import { priorityFromScore } from "../ml/model";
 
 /** ESI / triage target times (minutes). Protocol reference, not a promise. */
 export const CARE_TARGETS = [

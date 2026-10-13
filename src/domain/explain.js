@@ -1,7 +1,7 @@
 import { findSymptom } from "./catalog";
-import { CONDITIONS } from "./ml/conditions";
-import { news2Score } from "./ml/dataset";
-import { priorityFromScore } from "./ml/model";
+import { CONDITIONS } from "../ml/conditions";
+import { news2Score } from "../ml/dataset";
+import { priorityFromScore } from "../ml/model";
 
 function num(v) {
   return Number(v);

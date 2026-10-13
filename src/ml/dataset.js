@@ -1,4 +1,4 @@
-import { findSymptom } from "../catalog";
+import { findSymptom } from "../domain/catalog";
 import { COMORBIDITIES, CONDITIONS } from "./conditions";
 
 export { COMORBIDITIES, CONDITIONS };
