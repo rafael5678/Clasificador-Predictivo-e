@@ -29,5 +29,3 @@ export const COMORBIDITIES = [
   { id: "inmuno", label: "Defensas bajas (quimio, trasplante, VIH, etc.)", weight: 7 },
 ];
 
-export const LESIONES = CONDITIONS;
-export const COMORBILIDADES = COMORBIDITIES.map((c) => ({ ...c, w: c.weight }));

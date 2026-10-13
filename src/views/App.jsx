@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { COMORBIDITIES } from "../ml/conditions";
 import { featureContributions, getModel, predictScore } from "../ml/model";
-import { comparePriority, createPatient } from "../domain/patient";
-import { explainWhy } from "../domain/explain";
-import { analyzeTriage, fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "../infrastructure/api";
-import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "../domain/waitTimes";
-import { conditionLabel, setSymptomCatalog, symptomCatalog } from "../domain/catalog";
+import { comparePriority, createPatient } from "../models/patient";
+import { explainWhy } from "../models/explain";
+import { analyzeTriage, fetchPatients, fetchSymptoms, login as loginRequest, registerAndScore, reevaluatePatient, startCare } from "../services/api";
+import { CARE_TARGETS, estimateWaitMinutes, waitSharePercent, waitSummary } from "../models/waitTimes";
+import { conditionLabel, setSymptomCatalog, symptomCatalog } from "../models/catalog";
 import AdminPortal from "./AdminPortal";
 
 const SESSION_KEY = "triage.session";
@@ -138,14 +138,7 @@ export default function App() {
       diastolic: Number(source.diastolic),
       temperature: Number(source.temperature),
       respiratoryRate: Number(source.respiratoryRate),
-      fc: Number(source.heartRate),
-      pas: Number(source.systolic),
-      pad: Number(source.diastolic),
-      temp: Number(source.temperature),
-      fr: Number(source.respiratoryRate),
-      edad: Number(source.age),
-      lesionId: source.conditionId,
-      comorbIds: source.comorbidityIds,
+      comorbidityIds: source.comorbidityIds,
     };
   }
 
@@ -217,7 +210,7 @@ export default function App() {
       flash(error.message);
       return;
     }
-    setPatients((list) => list.map((p) => (p.id === id ? { ...p, status: "En atención", estado: "En atención" } : p)));
+    setPatients((list) => list.map((p) => (p.id === id ? { ...p, status: "En atención" } : p)));
     flash("Salió de la cola: pasa a atención.");
     setSelected(null);
   }
@@ -511,15 +504,15 @@ export default function App() {
             <div className="split">
               <div className="sheet">
                 <h3>Dataset del hospital</h3>
-                {result.scoreProtocolo != null && <p className="muted">Puntaje del protocolo: {Number(result.scoreProtocolo).toFixed(1)}</p>}
+                {result.protocolScore != null && <p className="muted">Puntaje del protocolo: {Number(result.protocolScore).toFixed(1)}</p>}
                 <ul className="why-list big">
                   {(result.datasetReasons?.length ? result.datasetReasons : result.explanation.reasons.slice(0, 3)).map((r) => <li key={r}>{r}</li>)}
                 </ul>
               </div>
               <div className="sheet">
                 <h3>Criterio de Gemini</h3>
-                {result.iaActiva && result.scoreGemini != null && <p className="muted">Puntaje que sugiere la IA: {Number(result.scoreGemini).toFixed(1)}</p>}
-                {!result.iaActiva && <p className="muted">Gemini aún no respondió. Se usó solo el protocolo. Revisa GEMINI_API_KEY en Render.</p>}
+                {result.iaActive && result.geminiScore != null && <p className="muted">Puntaje que sugiere la IA: {Number(result.geminiScore).toFixed(1)}</p>}
+                {!result.iaActive && <p className="muted">Gemini aún no respondió. Se usó solo el protocolo. Revisa GEMINI_API_KEY en Render.</p>}
                 <ul className="why-list big">
                   {(result.geminiReasons || []).map((r) => <li key={r}>{r}</li>)}
                 </ul>

@@ -1,4 +1,4 @@
-import { findSymptom } from "../domain/catalog";
+import { findSymptom } from "../models/catalog";
 import { COMORBIDITIES, CONDITIONS } from "./conditions";
 
 export { COMORBIDITIES, CONDITIONS };
@@ -86,7 +86,6 @@ export function generateDataset(n = 140) {
     const row = {
       id: `T-${String(i + 1).padStart(3, "0")}`,
       age,
-      edad: age,
       sex: random() > 0.5 ? "M" : "F",
       heartRate: clamp(Math.round(severe ? 70 + random() * 90 : 58 + random() * 50), 35, 190),
       spo2: clamp(Math.round(severe ? 82 + random() * 16 : 94 + random() * 6), 70, 100),
@@ -94,15 +93,9 @@ export function generateDataset(n = 140) {
       temperature: clamp(Math.round((severe ? 36 + random() * 4.2 : 36.2 + random() * 1.6) * 10) / 10, 34, 41.5),
       respiratoryRate: clamp(Math.round(severe ? 12 + random() * 28 : 12 + random() * 10), 6, 44),
       conditionId: condition.id,
-      lesionId: condition.id,
       comorbidityIds,
-      comorbIds: comorbidityIds,
     };
-    row.fc = row.heartRate;
-    row.pas = row.systolic;
-    row.temp = row.temperature;
-    row.fr = row.respiratoryRate;
-    row.pad = row.diastolic = clamp(Math.round(row.systolic * (0.55 + random() * 0.12)), 35, 130);
+    row.diastolic = clamp(Math.round(row.systolic * (0.55 + random() * 0.12)), 35, 130);
     row.y = clamp(clinicalLabel(row) + (random() - 0.5) * 8, 0, 100);
     rows.push(row);
   }
@@ -132,8 +125,3 @@ export function toFeatures(row) {
   };
 }
 
-export const vectorizar = toFeatures;
-export const generarDataset = generateDataset;
-export const etiquetaClinica = clinicalLabel;
-export const LESIONES = CONDITIONS;
-export const COMORBILIDADES = COMORBIDITIES.map((c) => ({ ...c, w: c.weight, label: c.label }));

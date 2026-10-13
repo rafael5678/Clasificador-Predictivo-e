@@ -99,19 +99,9 @@ export function featureContributions(model, row) {
   return FEATURES.map((feat) => {
     if (feat === "news" || feat === "shock") return null;
     const alt = { ...row };
-    if (feat === "condition") alt.conditionId = alt.lesionId = "cura";
-    else if (feat === "comorbidity") alt.comorbidityIds = alt.comorbIds = [];
-    else {
-      const key = feat === "age" ? "edad" : feat;
-      alt[feat] = baselines[feat];
-      if (feat === "age") alt.edad = 40;
-      if (feat === "heartRate") alt.fc = 75;
-      if (feat === "systolic") alt.pas = 120;
-      if (feat === "diastolic") alt.pad = 80;
-      if (feat === "temperature") alt.temp = 36.6;
-      if (feat === "respiratoryRate") alt.fr = 16;
-      alt[key] = baselines[feat];
-    }
+    if (feat === "condition") alt.conditionId = "cura";
+    else if (feat === "comorbidity") alt.comorbidityIds = [];
+    else alt[feat] = baselines[feat];
     const without = predictScore(model, alt);
     return { id: feat, name: labels[feat] || feat, weight: Math.round((predicted - without) * 10) / 10 };
   })
@@ -154,7 +144,3 @@ export function getModel() {
 }
 
 export { news2Score as news2 };
-export const prioridadDe = priorityFromScore;
-export const predecirScore = predictScore;
-export const explicar = featureContributions;
-export const obtenerModelo = getModel;

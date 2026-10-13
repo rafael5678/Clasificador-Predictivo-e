@@ -31,12 +31,12 @@ export function explainWhy(patient) {
       priority,
       dangerLead,
       headline: `Puntaje ${score} de 100 · ${priority.chip}`,
-      meaning: patient.meaningIa || priority.meaning,
+      meaning: patient.aiMeaning || patient.meaningIa || priority.meaning,
       whyQueue: score >= 62
         ? "Por este puntaje va adelante de quien llegó antes si esa persona está más estable."
         : "No es el caso más grave de la sala, según estos números.",
       reasons: patient.iaReasons,
-      iaActiva: Boolean(patient.iaActiva),
+      iaActive: Boolean(patient.iaActive),
     };
   }
   if (spo2 < 90) reasons.push(`El oxígeno en la sangre está muy bajo (${spo2}%). Lo normal es 95 a 100. Eso sube mucho el puntaje.`);
