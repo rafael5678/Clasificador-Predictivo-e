@@ -1,12 +1,15 @@
 import { priorityFromScore } from "../ml/model";
 
-export const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:8080" : "");
+const AUTH_URL = import.meta.env.VITE_AUTH_URL || (import.meta.env.DEV ? "http://localhost:8081" : "");
+const EVAL_URL = import.meta.env.VITE_EVAL_URL || (import.meta.env.DEV ? "http://localhost:8082" : "");
+const QUEUE_URL = import.meta.env.VITE_QUEUE_URL || (import.meta.env.DEV ? "http://localhost:8083" : "");
+const AI_URL = import.meta.env.VITE_AI_URL || (import.meta.env.DEV ? "http://localhost:8084" : "");
 
-async function request(path, options = {}, timeoutMs = 8000) {
+async function request(base, path, options = {}, timeoutMs = 8000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${base}${path}`, {
       headers: { "Content-Type": "application/json", ...(options.headers || {}) },
       ...options,
       signal: ctrl.signal,
@@ -81,7 +84,7 @@ export function mapFromApi(row) {
 }
 
 export async function fetchPatients() {
-  const list = await request("/api/v1/triage/patients", {}, 8000);
+  const list = await request(QUEUE_URL, "/api/v1/triage/patients", {}, 8000);
   return list.map(mapFromApi);
 }
 
@@ -112,19 +115,19 @@ function vitalsBody(form, patientId) {
 }
 
 export async function registerAndScore(form) {
-  const created = await request("/api/v1/triage/patients", {
+  const created = await request(AUTH_URL, "/api/v1/triage/patients", {
     method: "POST",
     body: JSON.stringify(intakeBody(form)),
   }, 25000);
-  const scored = await request("/api/v1/triage/evaluations", {
+  const scored = await request(EVAL_URL, "/api/v1/triage/evaluations", {
     method: "POST",
-    body: JSON.stringify(vitalsBody(form, created.patientId || created.pacienteId)),
+    body: JSON.stringify(vitalsBody(form, created.patientId || created.pacienteId || created.id)),
   }, 25000);
   return mapFromApi(scored);
 }
 
 export async function analyzeTriage(form, localModelScore) {
-  const scored = await request("/api/v1/triage/analyze", {
+  const scored = await request(EVAL_URL, "/api/v1/triage/analyze", {
     method: "POST",
     body: JSON.stringify({
       ...intakeBody(form),
@@ -136,7 +139,7 @@ export async function analyzeTriage(form, localModelScore) {
 }
 
 export async function reevaluatePatient(id, form) {
-  const scored = await request(`/api/v1/triage/evaluations/${id}/reassess`, {
+  const scored = await request(EVAL_URL, `/api/v1/triage/evaluations/${id}/reassess`, {
     method: "PUT",
     body: JSON.stringify(vitalsBody(form)),
   }, 25000);
@@ -144,11 +147,11 @@ export async function reevaluatePatient(id, form) {
 }
 
 export async function startCare(id) {
-  return mapFromApi(await request(`/api/v1/triage/care/${id}`, { method: "PATCH" }));
+  return mapFromApi(await request(QUEUE_URL, `/api/v1/triage/care/${id}`, { method: "PATCH" }));
 }
 
 export async function login(credentials) {
-  return request("/api/v1/auth/login", {
+  return request(AUTH_URL, "/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({
       username: credentials.username,
@@ -158,31 +161,31 @@ export async function login(credentials) {
 }
 
 export async function fetchSymptoms() {
-  return request("/api/v1/catalog/symptoms");
+  return request(AI_URL, "/api/v1/catalog/symptoms");
 }
 
 export async function fetchAdminSymptoms() {
-  return request("/api/v1/admin/symptoms");
+  return request(AI_URL, "/api/v1/admin/symptoms");
 }
 
 export async function saveSymptom(payload) {
-  return request("/api/v1/admin/symptoms", {
+  return request(AI_URL, "/api/v1/admin/symptoms", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export async function fetchAdminUsers() {
-  return request("/api/v1/admin/users");
+  return request(AUTH_URL, "/api/v1/admin/users");
 }
 
 export async function createUser(payload) {
-  return request("/api/v1/admin/users", {
+  return request(AUTH_URL, "/api/v1/admin/users", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export async function setUserActive(id, active) {
-  return request(`/api/v1/admin/users/${id}/active?active=${active}`, { method: "PATCH" });
+  return request(AUTH_URL, `/api/v1/admin/users/${id}/active?active=${active}`, { method: "PATCH" });
 }
