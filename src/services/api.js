@@ -5,7 +5,7 @@ const EVAL_URL = import.meta.env.VITE_EVAL_URL || (import.meta.env.DEV ? "http:/
 const QUEUE_URL = import.meta.env.VITE_QUEUE_URL || (import.meta.env.DEV ? "http://localhost:8083" : "");
 const AI_URL = import.meta.env.VITE_AI_URL || (import.meta.env.DEV ? "http://localhost:8084" : "");
 
-async function request(base, path, options = {}, timeoutMs = 8000) {
+async function request(base, path, options = {}, timeoutMs = 60000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -23,7 +23,7 @@ async function request(base, path, options = {}, timeoutMs = 8000) {
     if (!text) return null;
     return JSON.parse(text);
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("The server took too long to respond (Render is waking up).");
+    if (error.name === "AbortError") throw new Error("El servidor tardó demasiado en responder (puede estar despertando).");
     throw error;
   } finally {
     clearTimeout(timer);
@@ -84,7 +84,7 @@ export function mapFromApi(row) {
 }
 
 export async function fetchPatients() {
-  const list = await request(QUEUE_URL, "/api/v1/triage/patients", {}, 8000);
+  const list = await request(QUEUE_URL, "/api/v1/triage/patients", {}, 60000);
   return list.map(mapFromApi);
 }
 
@@ -118,11 +118,11 @@ export async function registerAndScore(form) {
   const created = await request(AUTH_URL, "/api/v1/triage/patients", {
     method: "POST",
     body: JSON.stringify(intakeBody(form)),
-  }, 25000);
+  }, 60000);
   const scored = await request(EVAL_URL, "/api/v1/triage/evaluations", {
     method: "POST",
     body: JSON.stringify(vitalsBody(form, created.patientId || created.pacienteId || created.id)),
-  }, 25000);
+  }, 60000);
   return mapFromApi(scored);
 }
 
@@ -134,7 +134,7 @@ export async function analyzeTriage(form, localModelScore) {
       ...vitalsBody(form),
       localModelScore: localModelScore == null ? null : Number(localModelScore),
     }),
-  }, 25000);
+  }, 60000);
   return mapFromApi(scored);
 }
 
@@ -142,7 +142,7 @@ export async function reevaluatePatient(id, form) {
   const scored = await request(EVAL_URL, `/api/v1/triage/evaluations/${id}/reassess`, {
     method: "PUT",
     body: JSON.stringify(vitalsBody(form)),
-  }, 25000);
+  }, 60000);
   return mapFromApi(scored);
 }
 
@@ -157,7 +157,7 @@ export async function login(credentials) {
       username: credentials.username,
       password: credentials.password,
     }),
-  }, 25000);
+  }, 60000);
 }
 
 export async function fetchSymptoms() {
